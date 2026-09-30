@@ -292,6 +292,11 @@ def contexto_para_pregunta(pregunta, limite=16000):
     """Arma el material que el modelo leerá para responder, sin pasarse del límite."""
     notas = [l for l in leer_notas().split("\n") if l.startswith("- ")]
     reuniones = _resumenes_de_reuniones()
+    # los apuntes de cada proyecto también sirven para responder (las credenciales NO: esas nunca las lee la IA)
+    for p in listar_proyectos():
+        apuntes = leer_apuntes(p["nombre"]).strip()
+        if apuntes:
+            reuniones.append(f"[Apuntes del proyecto {p['nombre']}]\n{apuntes[:3500]}")
     todo = "\n".join(notas) + "\n\n" + "\n\n".join(reuniones)
     if len(todo) <= limite:
         return todo.strip()
@@ -483,6 +488,43 @@ def cambiar_proyecto_en_notas(viejo, nuevo):
             lineas[i] = componer_linea(nota)
     with open(NOTAS, "w", encoding="utf-8") as f:
         f.write("\n".join(lineas))
+
+
+# ---------------------------------------------------------------- apuntes libres por proyecto
+
+def _slug(nombre):
+    return normalizar(nombre).replace(" ", "-")[:40] or "proyecto"
+
+
+def ruta_apuntes(nombre):
+    return os.path.join(DATOS, "proyectos", _slug(nombre), "apuntes.md")
+
+
+def leer_apuntes(nombre):
+    try:
+        with open(ruta_apuntes(nombre), "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def guardar_apuntes(nombre, texto):
+    ruta = ruta_apuntes(nombre)
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with open(ruta, "w", encoding="utf-8") as f:
+        f.write(texto or "")
+
+
+def mover_apuntes(viejo, nuevo):
+    texto = leer_apuntes(viejo)
+    if texto and _slug(viejo) != _slug(nuevo):
+        guardar_apuntes(nuevo, texto)
+        borrar_apuntes(viejo)
+
+
+def borrar_apuntes(nombre):
+    import shutil
+    shutil.rmtree(os.path.dirname(ruta_apuntes(nombre)), ignore_errors=True)
 
 
 def proyectos_para_ia():

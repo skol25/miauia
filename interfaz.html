@@ -311,6 +311,34 @@
   .acerca h2 { margin: 0; font-size: 22px; }
   .acerca p { margin: 4px 0 0; color: var(--suave); }
   .notas-version { white-space: pre-wrap; background: #1d1d1d; border: 1px solid var(--borde); border-radius: 8px; padding: 12px 14px; font-size: 13px; color: #d6d6d4; margin-top: 12px; max-height: 260px; overflow-y: auto; }
+
+  /* ---------- pestañas, apuntes y bóveda */
+  .pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--borde); margin: 18px 0 16px; }
+  .pestana { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; color: var(--suave); font-size: 13.5px; margin-bottom: -1px; }
+  .pestana:hover { color: var(--texto); }
+  .pestana.activa { color: var(--texto); border-bottom-color: #f7a8c4; font-weight: 600; }
+  .pestana .n { color: var(--tenue); font-weight: 400; font-size: 12px; }
+  .hoja-apuntes { position: relative; }
+  .apuntes { width: 100%; min-height: 420px; background: #1c1c1c; border: 1px solid var(--borde); border-radius: 10px; padding: 18px 20px;
+    outline: 0; resize: none; font: 14px/1.7 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: var(--texto); }
+  .apuntes:focus { border-color: #3f5f7c; }
+  .estado-apuntes { position: absolute; top: 10px; right: 14px; font-size: 11.5px; color: var(--tenue); }
+  .aviso-boveda { background: #1f2420; border: 1px solid #2e4a38; color: #b9d8c4; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; }
+  .cred { background: #202020; border: 1px solid var(--borde); border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; }
+  .cred-cab { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+  .cred-cab b { font-size: 14px; }
+  .cred-cab .espacio { flex: 1; }
+  .cred-fila { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; border-top: 1px solid #2a2a2a; }
+  .cred-fila .et { width: 90px; color: var(--tenue); flex: none; }
+  .cred-fila .val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cred-fila .mono { font-family: Consolas, "Cascadia Mono", monospace; letter-spacing: .03em; }
+  .boton.mini { padding: 2px 10px; font-size: 12px; }
+  .form-cred { background: #1c232b; border: 1px solid #3f5f7c; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; display: grid; gap: 8px; }
+  .form-cred .fila2 { display: flex; gap: 10px; }
+  .form-cred label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--suave); }
+  .form-cred input { background: var(--campo); border: 1px solid var(--borde); border-radius: 6px; padding: 6px 10px; outline: 0; color: var(--texto); font-size: 13px; width: 100%; }
+  .form-cred input:focus { border-color: #3f5f7c; }
+  .clave-campo { display: flex; gap: 6px; align-items: center; }
 </style>
 </head>
 <body>
@@ -433,8 +461,8 @@ async function recargar() {
 }
 async function vigilar() {
   const a = document.activeElement;
-  const escribiendo = a && (a.closest?.(".editor, .form-proy, .campo-proy") || (a.id === "nuevoTexto" && a.value) || a.tagName === "SELECT");
-  if (!editando && !ocupado && !editandoProyecto && !creandoProyecto && !["michi", "avisos"].includes(vista) && !escribiendo) {
+  const escribiendo = a && (a.closest?.(".editor, .form-proy, .campo-proy, .hoja-apuntes, .form-cred") || (a.id === "nuevoTexto" && a.value) || a.tagName === "SELECT");
+  if (!editando && !ocupado && !editandoProyecto && !creandoProyecto && !editandoCred && tabProyecto === "notas" && !["michi", "avisos"].includes(vista) && !escribiendo) {
     try { const f = await api("firma"); if (f !== D.firma) await recargar(); } catch (e) {}
   }
   setTimeout(vigilar, 2500);
@@ -668,17 +696,21 @@ function vistaProyecto(v) {
   let html = `<header class="cabecera-proy"><span class="bola" style="--c:${p.color}"></span>
       <div><h1>${esc(p.nombre)}</h1><p>${esc(v.sub)}</p></div><span class="espacio"></span>
       <button class="icono" id="btnEditarProy" title="Editar proyecto" style="margin-top:10px">${I.editar}</button></header>`;
+  const pestanas = pestanasProyecto(p);
   if (editandoProyecto) {
     html += `<div class="form-proy">
       <input type="text" id="pNombre" value="${esc(p.nombre)}" maxlength="40" placeholder="Nombre">
       <input type="text" id="pDesc" value="${esc(p.descripcion || "")}" maxlength="200" placeholder="¿De qué trata? (ayuda a la IA a reconocerlo: cliente, tema, palabras clave)">
       <div class="fila"><div class="colores-proy">${COLORES_PROY.map(c => `<button style="--c:${c}" data-colorp="${c}" class="${c === p.color ? "activo" : ""}"></button>`).join("")}</div>
         <span class="espacio" style="flex:1"></span>
-        ${confirmarBorrarProy ? `<span class="pista">Las notas se quedan, solo pierden el proyecto.</span>
+        ${confirmarBorrarProy ? `<span class="pista">Las notas se quedan (sin proyecto). Los apuntes y credenciales se borran.</span>
           <button class="boton" id="pNoBorrar">No</button><button class="boton primario" style="background:var(--rojo)" id="pSiBorrar">Sí, borrar</button>`
         : `<button class="boton" id="pBorrar">Borrar proyecto</button><button class="boton" id="pCancelar">Cancelar</button>
           <button class="boton primario" id="pGuardar">Guardar</button>`}</div></div>`;
   }
+  html += pestanas;
+  if (tabProyecto === "apuntes") return html + vistaApuntes(p);
+  if (tabProyecto === "credenciales") return html + vistaCredenciales(p);
   html += `<div class="buscador">${I.buscar}<input id="buscar" placeholder="Buscar en ${esc(p.nombre)}…" value="${esc(busqueda)}"></div>
     ${composer({ proyecto: p.nombre, ejemplo: "revisar el diseño del login el jueves" })}`;
   if (!todas.length && !reus.length) return html + `<div class="vacio">${I.carpeta}<div>Este proyecto todavía está vacío.<br>Las notas que la IA relacione con «${esc(p.nombre)}» aparecerán aquí.</div></div>`;
@@ -689,6 +721,120 @@ function vistaProyecto(v) {
       <h3>${esc(r.titulo)}</h3><div class="f">${esc(mayus(r.fecha))}</div>${r.resumen ? `<p>${esc(r.resumen)}</p>` : ""}</button>`).join("")}</div>`;
   if (hechas.length) html += sec("Hechas", hechas.length) + hechas.slice(0, 15).map(filaNota).join("");
   return html;
+}
+
+/* ================================================================ pestañas del proyecto: apuntes y credenciales */
+let tabProyecto = "notas", APUNTES = {}, CREDS = {}, editandoCred = null, revelada = {}, timerApuntes = null;
+function pestanasProyecto(p) {
+  const n = (CREDS[p.nombre]?.lista || []).length;
+  const t = (id, txt) => `<button class="pestana ${tabProyecto === id ? "activa" : ""}" data-tab="${id}">${txt}</button>`;
+  return `<div class="pestanas">${t("notas", "Tareas y notas")}${t("apuntes", "📝 Apuntes")}${t("credenciales", `🔒 Credenciales${n ? ` <span class="n">${n}</span>` : ""}`)}</div>`;
+}
+function vistaApuntes(p) {
+  if (!(p.nombre in APUNTES)) { cargarApuntes(p.nombre); return `<div class="vacio"><span class="cargando"></span></div>`; }
+  return `<div class="hoja-apuntes">
+      <textarea id="apuntes" class="apuntes" spellcheck="true" placeholder="Escribe lo que quieras sobre ${esc(p.nombre)}: enlaces, ideas, contactos, pasos para instalar, datos del servidor…&#10;&#10;Se guarda solo mientras escribes. La IA también lo usa para responder tus preguntas.">${esc(APUNTES[p.nombre])}</textarea>
+      <div class="estado-apuntes" id="estadoApuntes">Se guarda solo</div>
+    </div>`;
+}
+async function cargarApuntes(nombre) { APUNTES[nombre] = await api("apuntes", nombre); pintar(); }
+async function cargarCreds(nombre) { CREDS[nombre] = await api("credenciales", nombre); pintar(); }
+
+function generarClave() {
+  const letras = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*?";
+  const r = new Uint32Array(18); crypto.getRandomValues(r);
+  return [...r].map(x => letras[x % letras.length]).join("");
+}
+function formCred(c, p) {
+  const nuevo = !c.id;
+  return `<div class="form-cred" data-id="${esc(c.id || "")}">
+      <div class="fila2"><label>Nombre<input type="text" class="cNombre" maxlength="80" value="${esc(c.nombre || "")}" placeholder="Ej.: Hosting, Base de datos, Correo del cliente"></label></div>
+      <div class="fila2"><label>Usuario o correo<input type="text" class="cUsuario" value="${esc(c.usuario || "")}" autocomplete="off"></label>
+        <label>Contraseña<span class="clave-campo"><input type="password" class="cClave" autocomplete="new-password" placeholder="${nuevo ? "" : "Déjala vacía para no cambiarla"}">
+          <button type="button" class="icono cVer" title="Mostrar">👁</button><button type="button" class="boton cGenerar" title="Crear una contraseña segura">Generar</button></span></label></div>
+      <div class="fila2"><label>Dirección (URL)<input type="text" class="cUrl" value="${esc(c.url || "")}" placeholder="https://…"></label></div>
+      <div class="fila2"><label>Nota<input type="text" class="cNota" value="${esc(c.nota || "")}" placeholder="Opcional (puerto, PIN, pregunta de seguridad…)"></label></div>
+      <div class="acciones-michi" style="border:0;margin:0;padding-top:4px"><button class="boton cCancelar">Cancelar</button><button class="boton primario cGuardar">Guardar</button></div>
+    </div>`;
+}
+function vistaCredenciales(p) {
+  const datos = CREDS[p.nombre];
+  if (!datos) { cargarCreds(p.nombre); return `<div class="vacio"><span class="cargando"></span></div>`; }
+  let html = `<div class="aviso-boveda">🔒 ${datos.cifrado ? "Se guardan cifradas con tu usuario de Windows: solo tú, en esta PC, puedes verlas." : "Modo de prueba: en esta PC no hay cifrado de Windows."}
+      La IA nunca las lee. Al copiar una contraseña, se borra sola del portapapeles a los 30 segundos.</div>
+    <div class="acciones-michi" style="border:0;margin:6px 0 10px;padding:0;justify-content:flex-start">
+      <button class="boton primario" id="credNueva">+ Nueva credencial</button></div>`;
+  if (editandoCred === "nueva") html += formCred({}, p);
+  if (!datos.lista.length && editandoCred !== "nueva") html += `<div class="vacio">🔑<div>Todavía no hay credenciales en este proyecto.</div></div>`;
+  for (const c of datos.lista) {
+    if (editandoCred === c.id) { html += formCred(c, p); continue; }
+    const clave = revelada[c.id] !== undefined ? esc(revelada[c.id]) : (c.tiene_clave ? "••••••••••" : "<i>sin contraseña</i>");
+    html += `<div class="cred">
+        <div class="cred-cab"><b>${esc(c.nombre)}</b><span class="espacio"></span>
+          <button class="icono" data-cred-editar="${c.id}" title="Editar">${I.editar}</button>
+          <button class="icono" data-cred-borrar="${c.id}" title="Borrar">${I.borrar}</button></div>
+        ${c.error ? `<div class="pista" style="color:var(--rojo)">No se pudo descifrar (¿se copió desde otra PC?)</div>` : ""}
+        ${c.usuario ? `<div class="cred-fila"><span class="et">Usuario</span><span class="val">${esc(c.usuario)}</span><button class="boton mini" data-copiar="${c.id}|usuario">Copiar</button></div>` : ""}
+        ${c.tiene_clave ? `<div class="cred-fila"><span class="et">Contraseña</span><span class="val mono">${clave}</span>
+          <button class="boton mini" data-revelar="${c.id}">${revelada[c.id] !== undefined ? "Ocultar" : "Ver"}</button>
+          <button class="boton mini" data-copiar="${c.id}|clave">Copiar</button></div>` : ""}
+        ${c.url ? `<div class="cred-fila"><span class="et">Dirección</span><span class="val">${esc(c.url)}</span><button class="boton mini" data-copiar="${c.id}|url">Copiar</button></div>` : ""}
+        ${c.nota ? `<div class="cred-fila"><span class="et">Nota</span><span class="val">${esc(c.nota)}</span></div>` : ""}
+        ${confirmando === "cred:" + c.id ? `<div class="confirmar" style="margin-top:8px">¿Borrar esta credencial? <button class="boton" data-cred-no>No</button>
+          <button class="boton primario" style="background:var(--rojo)" data-cred-si="${c.id}">Sí, borrar</button></div>` : ""}
+      </div>`;
+  }
+  return html;
+}
+function copiarTexto(t) {
+  const a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select();
+  try { document.execCommand("copy"); } finally { a.remove(); }
+}
+function enlazarPestanas() {
+  const p = vistaActual().proyecto; if (!p) return;
+  document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { tabProyecto = b.dataset.tab; editandoCred = null; revelada = {}; pintar(); });
+  const ap = document.getElementById("apuntes");
+  if (ap) {
+    const est = document.getElementById("estadoApuntes");
+    const crecer = () => { ap.style.height = "auto"; ap.style.height = Math.max(420, ap.scrollHeight) + "px"; };
+    crecer();
+    ap.oninput = () => {
+      crecer(); APUNTES[p.nombre] = ap.value; est.textContent = "Escribiendo…";
+      clearTimeout(timerApuntes);
+      timerApuntes = setTimeout(async () => { await api("guardar_apuntes", p.nombre, ap.value); est.textContent = "Guardado ✓"; }, 700);
+    };
+  }
+  const nueva = document.getElementById("credNueva");
+  if (nueva) nueva.onclick = () => { editandoCred = "nueva"; pintar(); document.querySelector(".cNombre")?.focus(); };
+  document.querySelectorAll(".form-cred").forEach(f => {
+    const q = s => f.querySelector(s);
+    q(".cVer").onclick = () => { q(".cClave").type = q(".cClave").type === "password" ? "text" : "password"; };
+    q(".cGenerar").onclick = () => { q(".cClave").value = generarClave(); q(".cClave").type = "text"; };
+    q(".cCancelar").onclick = () => { editandoCred = null; pintar(); };
+    q(".cGuardar").onclick = async () => {
+      const clave = q(".cClave").value;
+      await api("guardar_credencial", { id: f.dataset.id || null, proyecto: p.nombre, nombre: q(".cNombre").value,
+        usuario: q(".cUsuario").value, clave: clave || (f.dataset.id ? null : ""), url: q(".cUrl").value, nota: q(".cNota").value });
+      editandoCred = null; revelada = {}; toast("Credencial guardada 🔒"); await cargarCreds(p.nombre);
+    };
+  });
+  document.querySelectorAll("[data-cred-editar]").forEach(b => b.onclick = () => { editandoCred = b.dataset.credEditar; pintar(); });
+  document.querySelectorAll("[data-cred-borrar]").forEach(b => b.onclick = () => { confirmando = "cred:" + b.dataset.credBorrar; pintar(); });
+  document.querySelectorAll("[data-cred-no]").forEach(b => b.onclick = () => { confirmando = null; pintar(); });
+  document.querySelectorAll("[data-cred-si]").forEach(b => b.onclick = async () => {
+    await api("borrar_credencial", b.dataset.credSi); confirmando = null; toast("Credencial borrada"); await cargarCreds(p.nombre); });
+  document.querySelectorAll("[data-revelar]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.revelar;
+    if (revelada[id] !== undefined) { delete revelada[id]; return pintar(); }
+    revelada[id] = await api("revelar_credencial", id); pintar();
+    setTimeout(() => { if (revelada[id] !== undefined) { delete revelada[id]; if (tabProyecto === "credenciales") pintar(); } }, 20000);
+  });
+  document.querySelectorAll("[data-copiar]").forEach(b => b.onclick = async () => {
+    const [id, campo] = b.dataset.copiar.split("|");
+    const r = await api("copiar_credencial", id, campo);
+    if (!r.ok && r.valor) copiarTexto(r.valor);
+    toast(campo === "clave" ? "Contraseña copiada (se borra del portapapeles en 30 s)" : "Copiado");
+  });
 }
 
 /* ================================================================ calendario */
@@ -807,6 +953,7 @@ function enlazarExtras() {
   const $id = id => document.getElementById(id);
   document.querySelectorAll("[data-ir-reunion]").forEach(b => b.onclick = () => { vista = "reuniones"; reunionAbierta = b.dataset.irReunion; pintar(); contenido.scrollTop = 0; });
   // proyecto
+  enlazarPestanas();
   if ($id("btnEditarProy")) $id("btnEditarProy").onclick = () => { editandoProyecto = !editandoProyecto; confirmarBorrarProy = false; pintar(); };
   if ($id("pGuardar")) {
     const p = vistaActual().proyecto; let color = p.color;
@@ -1393,6 +1540,7 @@ function enlazarMichi() {
   animarVitrina();
 }
 function irA(v) {
+  if (v !== vista) { tabProyecto = "notas"; editandoCred = null; revelada = {}; }
   vista = v; editando = confirmando = reunionAbierta = null; busqueda = "";
   editandoProyecto = confirmarBorrarProy = false; pintar(); contenido.scrollTop = 0;
 }

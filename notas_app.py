@@ -119,12 +119,52 @@ class Api:
         comun.guardar_proyectos(lista)
         if nuevo != viejo:
             comun.cambiar_proyecto_en_notas(viejo, nuevo)
+            comun.mover_apuntes(viejo, nuevo)
+            import boveda
+            boveda.renombrar_proyecto(viejo, nuevo)
         return True
 
     def borrar_proyecto(self, nombre):
         comun.guardar_proyectos([x for x in comun.listar_proyectos() if x["nombre"] != nombre])
         comun.cambiar_proyecto_en_notas(nombre, "")
+        comun.borrar_apuntes(nombre)
+        import boveda
+        boveda.borrar_proyecto(nombre)
         return True
+
+    # ---------- apuntes y credenciales del proyecto
+    def apuntes(self, proyecto):
+        return comun.leer_apuntes(proyecto)
+
+    def guardar_apuntes(self, proyecto, texto):
+        comun.guardar_apuntes(proyecto, texto)
+        return True
+
+    def credenciales(self, proyecto):
+        import boveda
+        return {"lista": boveda.listar(proyecto), "cifrado": boveda.CIFRADO_REAL}
+
+    def guardar_credencial(self, entrada):
+        import boveda
+        return boveda.guardar(entrada)
+
+    def borrar_credencial(self, id_):
+        import boveda
+        boveda.borrar(id_)
+        return True
+
+    def revelar_credencial(self, id_):
+        import boveda
+        return boveda.revelar(id_)
+
+    def copiar_credencial(self, id_, campo):
+        """Copia usuario o contraseña. La contraseña se borra del portapapeles a los 30 s."""
+        import boveda
+        valor = boveda.revelar(id_) if campo == "clave" else boveda.dato(id_, campo)
+        if valor is None:
+            return {"ok": False}
+        ok = boveda.copiar(valor, 30 if campo == "clave" else 120)
+        return {"ok": ok, "valor": None if ok else valor}
 
     # ---------- avisos
     def guardar_avisos(self, datos):

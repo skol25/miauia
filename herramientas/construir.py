@@ -20,7 +20,7 @@ APP = os.path.join(BUILD, "app")
 DIST = os.path.join(RAIZ, "dist")
 
 ARCHIVOS = [
-    "asistente.py", "avisos.py", "comun.py", "configurar.py", "actualizador.py", "michi.py",
+    "asistente.py", "avisos.py", "boveda.py", "comun.py", "configurar.py", "actualizador.py", "michi.py",
     "michi_arte.py", "notas_app.py", "trabajador.py", "interfaz.html", "michi.json", "requirements.txt",
 ]
 
