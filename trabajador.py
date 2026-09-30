@@ -200,7 +200,7 @@ def modo_nota(texto, proyecto_fijo=""):
             pend = _pendientes()
             n = item.get("numero") or 0
             if 1 <= n <= len(pend):
-                _aplicar_a(pend[n - 1], "completar")
+                _aplicar_a(dict(pend[n - 1]), "completar")
                 hechas.append(pend[n - 1]["texto"])
             else:
                 linea = comun.completar_tarea(contenido)
@@ -256,17 +256,38 @@ def _texto_pendientes(pend):
     return "\n".join(filas)
 
 
-def _aplicar_a(nota, tipo, fecha="", hora=""):
+def _aplicar_a(nota, tipo, **cambios):
+    """Cambia una nota y deja en nota['linea'] la línea nueva (para poder encadenar cambios)."""
     if tipo == "borrar":
         return comun.reemplazar_linea(nota["linea"], None)
     nueva = dict(nota)
     if tipo == "completar":
+        if not nota["casilla"]:
+            return False
         nueva.update(hecho=True, fecha_hecho="")
     elif tipo == "reabrir":
         nueva.update(hecho=False, fecha_hecho="")
     elif tipo == "reprogramar":
-        nueva.update(fecha=comun.limpiar_fecha(fecha) or nota["fecha"], hora=comun.limpiar_hora(hora) or nota["hora"])
-    return comun.reemplazar_linea(nota["linea"], comun.componer_linea(nueva))
+        fecha, hora = comun.limpiar_fecha(cambios.get("fecha")), comun.limpiar_hora(cambios.get("hora"))
+        if not fecha and not hora:
+            return False
+        nueva.update(fecha=fecha or nota["fecha"], hora=hora or nota["hora"])
+    elif tipo == "editar":
+        texto = (cambios.get("texto") or "").strip()
+        clase = cambios.get("clase")
+        if texto:
+            nueva["texto"] = texto
+        if clase in comun.NOMBRE_TIPO and clase != nota["tipo"]:
+            nueva["tipo"] = clase
+        if nueva == nota:
+            return False
+    elif tipo == "mover":
+        nueva["proyecto"] = cambios.get("proyecto", "")
+    linea = comun.componer_linea(nueva)
+    if not comun.reemplazar_linea(nota["linea"], linea):
+        return False
+    nota.update(nueva, linea=linea)
+    return True
 
 
 def _conversacion():
@@ -286,6 +307,11 @@ def _recordar(pregunta, respuesta):
         json.dump({"t": time.time(), "turnos": turnos}, f, ensure_ascii=False)
 
 
+VISTAS_APP = ["hoy", "pendientes", "proximas", "calendario", "proyecto", "hechas", "todas", "reuniones",
+              "cita", "recordatorio", "compra", "idea", "dato", "michi", "avisos"]
+ACCIONES = ["agregar", "completar", "reabrir", "reprogramar", "editar", "mover", "borrar",
+            "crear_proyecto", "apunte", "abrir"]
+
 ESQUEMA_PREGUNTA = {
     "type": "object",
     "properties": {
@@ -293,74 +319,157 @@ ESQUEMA_PREGUNTA = {
         "acciones": {"type": "array", "items": {
             "type": "object",
             "properties": {
-                "tipo": {"type": "string", "enum": ["completar", "reabrir", "reprogramar", "borrar"]},
+                "tipo": {"type": "string", "enum": ACCIONES},
                 "numeros": {"type": "array", "items": {"type": "integer"}},
+                "clase": {"type": "string", "enum": ["", "tarea", "cita", "recordatorio", "compra", "idea", "dato"]},
+                "texto": {"type": "string"},
                 "fecha": {"type": "string"},
                 "hora": {"type": "string"},
+                "proyecto": {"type": "string"},
+                "vista": {"type": "string", "enum": [""] + VISTAS_APP},
             },
-            "required": ["tipo", "numeros", "fecha", "hora"],
+            "required": ["tipo", "numeros", "clase", "texto", "fecha", "hora", "proyecto", "vista"],
         }},
     },
     "required": ["respuesta", "acciones"],
 }
+
+INSTRUCCIONES_ACCIONES = """Además de responder, MANEJAS la app de notas: si te piden hacer algo, hazlo con 'acciones'.
+Acciones (usa solo los campos que hagan falta; los demás van vacíos):
+- agregar: nota nueva. clase (tarea, cita, recordatorio, compra, idea o dato), texto, fecha AAAA-MM-DD, hora HH:MM, proyecto.
+- completar: marcar como hechas / quitar de pendientes / "ya lo hice". numeros.
+- reabrir: volver a poner como pendiente algo de HECHAS. numeros (los H).
+- reprogramar: cambiar fecha y/o hora. numeros, fecha, hora.
+- editar: cambiar lo que dice una nota o su clase. numeros (uno), texto nuevo, clase.
+- mover: poner notas en un proyecto (se crea si no existe). numeros, proyecto. Para sacarlas de su proyecto: proyecto "ninguno".
+- borrar: SOLO si dice borrar o eliminar. numeros.
+- crear_proyecto: proyecto (nombre), texto (descripción, opcional).
+- apunte: escribir en los apuntes libres de un proyecto. proyecto, texto.
+- abrir: mostrar una pantalla de la app. vista (hoy, pendientes, proximas, calendario, hechas, todas, reuniones, cita, recordatorio, compra, idea, dato, michi, avisos) o vista "proyecto" + proyecto.
+'numeros' son los números entre corchetes de las listas: pendientes [1], [2]…; hechas [101]…; otras notas [201]…
+Puedes hacer varias acciones a la vez (ej.: crear un proyecto y mover tareas a él).
+Si solo es una pregunta, 'acciones' va vacía. Si no está claro a qué notas se refiere, no actúes y pregunta.
+Nunca inventes números. No tienes acceso a contraseñas ni credenciales: si te las piden, di que están en la pestaña Credenciales del proyecto.
+En 'respuesta' cuenta en una o dos frases lo que hiciste, o responde la pregunta.
+
+Ejemplos:
+"anota que mañana a las 3 tengo dentista" → agregar, clase cita, texto "Dentista", fecha de mañana, hora 15:00.
+"pasa la 2 y la 4 al proyecto Sputniq" → mover, numeros [2,4], proyecto "Sputniq".
+"cambia lo de Carlos para el viernes" → reprogramar, numeros [el de Carlos], fecha del viernes.
+"ábreme el calendario" → abrir, vista "calendario".
+"guarda en los apuntes de TIODOL que el logo va en azul" → apunte, proyecto "TIODOL", texto "El logo va en azul"."""
+
+
+def _numerar(nota, prefijo):
+    extra = [_cuando(nota)] if nota["casilla"] and not nota["hecho"] else ([nota["fecha"]] if nota["fecha"] else [])
+    if nota["proyecto"]:
+        extra.append(f"proyecto {nota['proyecto']}")
+    return f"[{prefijo}] {comun.NOMBRE_TIPO.get(nota['tipo'], 'Dato')}: {nota['texto']}" + (
+        f" — {' · '.join(extra)}" if extra else "")
 
 
 def modo_pregunta(pregunta):
     asegurar_ollama()
     pend = _pendientes()
     todas = comun.listar_notas()
-    hechas = sorted([n for n in todas if n["hecho"]], key=lambda n: -n["orden"])[:12]
-    otras = [n["linea"] for n in todas if not n["casilla"]]
-    extra = comun.contexto_para_pregunta(pregunta, limite=9000, solo_extra=True)
+    hechas = sorted([n for n in todas if n["hecho"]], key=lambda n: -n["orden"])[:15]
+    otras = [n for n in todas if not n["casilla"]][-60:]
+    extra = comun.contexto_para_pregunta(pregunta, limite=8000, solo_extra=True)
     charla = "\n".join(f"Pregunta: {t['p']}\nRespuesta: {t['r']}" for t in _conversacion())
     sistema = (
         f"Eres Miauia, el asistente personal de {QUIEN}. Respondes en español, breve y directo, usando SOLO "
         "la información que te doy. La lista TAREAS PENDIENTES es la verdad: si tiene elementos, hay "
-        "pendientes (menciónalos, empezando por los atrasados y los de hoy). Cuando hables de fechas, di el día.\n"
-        "Además de responder, puedes ACTUAR sobre las tareas si te lo piden claramente:\n"
-        "- completar: marcar como hechas / quitar de pendientes / 'ya lo hice'.\n"
-        "- reabrir: volver a poner como pendiente algo de HECHAS (usa su número H).\n"
-        "- reprogramar: cambiar la fecha (AAAA-MM-DD) o la hora (HH:MM).\n"
-        "- borrar: SOLO si dice borrar o eliminar.\n"
-        "En 'numeros' pon los números [N] de la lista (para reabrir, los números de HECHAS). "
-        "Si solo es una pregunta, 'acciones' va vacía. Si la petición es ambigua, no actúes y pregunta. "
-        "En 'respuesta' cuenta lo que hiciste o responde la pregunta."
+        "pendientes (menciónalos, empezando por los atrasados y los de hoy). Cuando hables de fechas, di el día.\n\n"
+        + INSTRUCCIONES_ACCIONES
     )
     usuario = (
         f"Ahora es {comun.fecha_larga()}.\nCalendario:\n{comun.calendario_proximo()}\n\n"
-        f"=== TAREAS PENDIENTES ({len(pend)}) ===\n{_texto_pendientes(pend) or '(ninguna)'}\n\n"
-        f"=== HECHAS HACE POCO ===\n" + ("\n".join(f"[H{100 + i}] {n['texto']}" for i, n in enumerate(hechas, 1)) or "(ninguna)")
-        + f"\n\n=== NOTAS, IDEAS Y DATOS ===\n" + ("\n".join(otras[-40:]) or "(ninguna)")
+        f"=== PROYECTOS ===\n{comun.proyectos_para_ia()}\n\n"
+        f"=== TAREAS PENDIENTES ({len(pend)}) ===\n"
+        + ("\n".join(_numerar(n, i) for i, n in enumerate(pend, 1)) or "(ninguna)")
+        + "\n\n=== HECHAS HACE POCO ===\n"
+        + ("\n".join(_numerar(n, 100 + i) for i, n in enumerate(hechas, 1)) or "(ninguna)")
+        + "\n\n=== OTRAS NOTAS (ideas y datos) ===\n"
+        + ("\n".join(_numerar(n, 200 + i) for i, n in enumerate(otras, 1)) or "(ninguna)")
         + (f"\n\n=== REUNIONES Y APUNTES ===\n{extra}" if extra else "")
         + (f"\n\n=== CONVERSACIÓN RECIENTE ===\n{charla}" if charla else "")
         + f"\n\nMensaje: {pregunta}"
     )
     try:
-        datos = leer_json(conversar(CFG["modelo_rapido"], sistema, usuario, formato=ESQUEMA_PREGUNTA))
+        datos = leer_json(conversar(CFG["modelo_rapido"], sistema, usuario, formato=ESQUEMA_PREGUNTA, contexto=12288))
     except Exception:
         log.exception("La respuesta no vino en el formato esperado; pregunto sin acciones")
-        datos = {"respuesta": conversar(CFG["modelo_rapido"], sistema.split("Además de responder")[0], usuario), "acciones": []}
+        datos = {"respuesta": conversar(CFG["modelo_rapido"], sistema.split("Además de responder")[0], usuario),
+                 "acciones": []}
 
-    hechos = []
+    def buscar(num):
+        if 1 <= num <= len(pend):
+            return pend[num - 1]
+        if 101 <= num <= 100 + len(hechas):
+            return hechas[num - 101]
+        if 201 <= num <= 200 + len(otras):
+            return otras[num - 201]
+        return None
+
+    hechos, ir = [], None
     for acc in datos.get("acciones") or []:
         tipo = acc.get("tipo")
-        for num in acc.get("numeros") or []:
-            if tipo == "reabrir" and 101 <= num <= 100 + len(hechas):
-                nota = hechas[num - 101]
-            elif 1 <= num <= len(pend):
-                nota = pend[num - 1]
-            else:
-                continue
-            if _aplicar_a(nota, tipo, acc.get("fecha", ""), acc.get("hora", "")):
-                hechos.append((tipo, nota["texto"]))
+        texto = (acc.get("texto") or "").strip()
+        proyecto = (acc.get("proyecto") or "").strip()
+        try:
+            if tipo == "agregar" and texto:
+                clase = acc.get("clase") or "tarea"
+                comun.agregar_nota(clase, texto, acc.get("fecha", ""), acc.get("hora", ""), proyecto=proyecto)
+                cuando = " ".join(x for x in (comun.limpiar_fecha(acc.get("fecha")), comun.limpiar_hora(acc.get("hora"))) if x)
+                hechos.append(f"Anoté {comun.NOMBRE_TIPO.get(clase, 'Dato').lower()}: {texto}"
+                              + (f" ({cuando})" if cuando else "") + (f" · {comun.asegurar_proyecto(proyecto)}" if proyecto else ""))
+            elif tipo == "crear_proyecto" and proyecto:
+                existia = comun.buscar_proyecto(proyecto)
+                nombre = comun.asegurar_proyecto(proyecto, texto)
+                hechos.append(f"El proyecto {nombre} ya existía" if existia else f"Creé el proyecto {nombre}")
+            elif tipo == "apunte" and proyecto and texto:
+                nombre = comun.asegurar_proyecto(proyecto)
+                previo = comun.leer_apuntes(nombre).rstrip()
+                comun.guardar_apuntes(nombre, (previo + "\n" if previo else "") + f"- {texto}\n")
+                hechos.append(f"Lo guardé en los apuntes de {nombre}: {texto}")
+            elif tipo == "abrir":
+                v = acc.get("vista") or ""
+                if v == "proyecto" or (not v and proyecto):
+                    p = comun.buscar_proyecto(proyecto)
+                    ir = f"p:{p['nombre']}" if p else None
+                elif v in VISTAS_APP:
+                    ir = v
+            elif tipo in ("completar", "reabrir", "reprogramar", "editar", "mover", "borrar"):
+                destino = ""
+                if tipo == "mover":
+                    destino = "" if comun.normalizar(proyecto) in ("", "ninguno", "sin proyecto") else comun.asegurar_proyecto(proyecto)
+                for num in dict.fromkeys(acc.get("numeros") or []):
+                    nota = buscar(num)
+                    if not nota:
+                        continue
+                    antes = nota["texto"]
+                    if _aplicar_a(nota, tipo, fecha=acc.get("fecha", ""), hora=acc.get("hora", ""),
+                                  texto=texto, clase=acc.get("clase"), proyecto=destino):
+                        hechos.append({
+                            "completar": f"Marqué como hecha: {antes}",
+                            "reabrir": f"Volví a pendientes: {antes}",
+                            "reprogramar": f"Nueva fecha para {antes}: {_cuando(nota)}",
+                            "editar": f"Cambié «{antes}» por «{nota['texto']}»",
+                            "mover": f"Moví {antes} → " + (destino or "sin proyecto"),
+                            "borrar": f"Borré: {antes}",
+                        }[tipo])
+                    if tipo == "editar":
+                        break  # editar es de una sola nota
+        except Exception:
+            log.exception("No pude hacer la acción %s", acc)
+
     respuesta = (datos.get("respuesta") or "").strip()
     if hechos:
-        verbo = {"completar": "Marqué como hecha", "reabrir": "Volví a pendientes", "reprogramar": "Cambié la fecha de",
-                 "borrar": "Borré"}
-        resumen = "\n".join(f"✓ {verbo[t]}: {txt}" for t, txt in hechos)
+        resumen = "\n".join(f"✓ {h}" for h in hechos)
         respuesta = f"{respuesta}\n\n{resumen}" if respuesta else resumen
     _recordar(pregunta, respuesta)
-    return {"ok": True, "titulo": "Respuesta", "pregunta": pregunta, "mensaje": respuesta, "cambios": len(hechos)}
+    return {"ok": True, "titulo": "Respuesta", "pregunta": pregunta, "mensaje": respuesta,
+            "cambios": len(hechos), "ir": ir}
 
 
 ESQUEMA_REUNION = {

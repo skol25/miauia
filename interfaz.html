@@ -365,7 +365,7 @@
         <form class="caja-pregunta" id="formPregunta">
           <svg class="chispa" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>
           <button type="button" class="pata" id="btnPata" title="Jugar con tus michis">🐾</button>
-          <input id="pregunta" placeholder="Pregúntale algo a tus notas… (ej.: ¿qué tengo pendiente esta semana?)" autocomplete="off">
+          <input id="pregunta" placeholder="Pídele o pregúntale algo a Miauia… (ej.: pasa lo de Carlos al viernes)" autocomplete="off">
           <button class="boton primario" id="btnPreguntar">Preguntar</button>
         </form></div>
       </div>
@@ -1098,6 +1098,7 @@ formPregunta.onsubmit = async e => {
     document.getElementById("cerrarResp").onclick = () => respuesta.innerHTML = "";
     pregunta.value = "";
     if (r.cambios) await recargar();
+    if (r.ir) irA(r.ir);
   } catch (err) {
     respuesta.innerHTML = `<div class="respuesta"><div class="a">No se pudo preguntar: ${esc(err)}</div></div>`;
   } finally { ocupado = false; btnPreguntar.disabled = false; gatoFijar(null); gatoFestejar(); }
