@@ -187,9 +187,6 @@ def modo_nota(texto, proyecto_fijo=""):
         items = datos.get("items") or []
     except Exception as e:
         log.exception("La IA no pudo ordenar la nota")
-        if parece_secreto(texto):
-            guardar_credencial(_proyecto_boveda(proyecto_fijo), "Acceso", "", "", "", texto)
-            return {"ok": True, "titulo": "Guardado en Credenciales", "mensaje": "🔒 Parecía una contraseña: la guardé cifrada."}
         linea = comun.agregar_nota("dato", texto, proyecto=proyecto_fijo)
         return {"ok": True, "titulo": "Nota guardada (sin ordenar)",
                 "mensaje": f"{texto}\n\nLa IA no respondió: {e}", "linea": linea}
@@ -208,10 +205,6 @@ def modo_nota(texto, proyecto_fijo=""):
             else:
                 linea = comun.completar_tarea(contenido)
                 (hechas if linea else no_encontradas).append(contenido)
-        elif parece_secreto(contenido):
-            nombre_p = _proyecto_boveda(proyecto_fijo or item.get("proyecto"))
-            guardar_credencial(nombre_p, "Acceso", "", "", "", contenido)
-            guardadas.append(f"🔒 Lo guardé cifrado en Credenciales de {nombre_p} (parecía una contraseña)")
         else:
             proyecto = proyecto_fijo or (item.get("proyecto") or "").strip()
             proyecto = comun.asegurar_proyecto(proyecto) if proyecto else ""
@@ -359,16 +352,15 @@ Acciones (usa solo los campos que hagan falta; los demás van vacíos):
 - mover: poner notas en un proyecto (se crea si no existe). numeros, proyecto. Para sacarlas de su proyecto: proyecto "ninguno".
 - borrar: SOLO si dice borrar o eliminar. numeros.
 - crear_proyecto: proyecto (nombre), texto (descripción, opcional).
-- apunte: escribir en los apuntes libres de un proyecto (información, enlaces, pasos, contactos). proyecto, texto.
-  Si dice "guarda en las notas/apuntes de <proyecto>" algo que es información (no una tarea), usa apunte.
-- credencial: guardar un acceso CIFRADO en la pestaña Credenciales del proyecto. proyecto, texto (nombre corto, ej. "Admin Motocard"), usuario, clave, url.
-  TODA contraseña, clave, token o acceso va SIEMPRE con credencial, nunca con agregar ni apunte.
-- a_boveda: pasar a Credenciales (cifrado) una nota que tiene una contraseña, y quitarla de las notas. numeros, texto (nombre corto).
+- apunte: escribir en los apuntes libres de un proyecto (información, enlaces, pasos, contactos, accesos, lo que sea). proyecto, texto.
+  Si dice "guarda en las notas/apuntes de <proyecto>" algo que no es una tarea, usa apunte y copia el texto EXACTO (usuarios, claves, correos y números tal cual).
+- credencial: SOLO si pide expresamente guardarlo en "Credenciales", "la bóveda" o "cifrado". proyecto, texto (nombre corto), usuario, clave, url.
+- a_boveda: SOLO si pide pasar una nota a Credenciales/bóveda. numeros, texto (nombre corto).
 - abrir: mostrar una pantalla de la app. vista (hoy, pendientes, proximas, calendario, hechas, todas, reuniones, cita, recordatorio, compra, idea, dato, michi, avisos) o vista "proyecto" + proyecto.
 'numeros' son los números entre corchetes de las listas: pendientes [1], [2]…; hechas [101]…; otras notas [201]…
 Puedes hacer varias acciones a la vez (ej.: crear un proyecto y mover tareas a él).
 Si solo es una pregunta, 'acciones' va vacía. Si no está claro a qué notas se refiere, no actúes y pregunta.
-Nunca inventes números. No puedes LEER las credenciales guardadas: si te piden una, di que está en la pestaña Credenciales del proyecto. Nunca repitas una contraseña en 'respuesta'.
+Nunca inventes números. No puedes leer la pestaña Credenciales (sí los apuntes y las notas): si te piden algo guardado allí, di que está en esa pestaña.
 IMPORTANTE: nada cambia si no pones la acción en 'acciones'. Nunca digas que hiciste algo que no pusiste ahí.
 Si te piden algo que no puedes hacer con estas acciones, dilo con sinceridad.
 En 'respuesta' cuenta en una o dos frases lo que hiciste, o responde la pregunta. En 'respuesta' no escribas los números [N]: nombra las notas por lo que dicen.
@@ -380,7 +372,7 @@ Ejemplos:
 "quítale la fecha a lo del banco" → quitar_fecha, numeros [el del banco].
 "ábreme el calendario" → abrir, vista "calendario".
 "guarda en los apuntes de TIODOL que el logo va en azul" → apunte, proyecto "TIODOL", texto "El logo va en azul".
-"guarda en Motocard el acceso admin@x.com clave Abc123" → credencial, proyecto "Motocard", texto "Admin", usuario "admin@x.com", clave "Abc123"."""
+"guarda en las notas de Motocard admin@x.com clave Abc123" → apunte, proyecto "Motocard", texto "admin@x.com clave Abc123"."""
 
 
 def _numerar(nota, prefijo):
@@ -499,10 +491,6 @@ def modo_pregunta(pregunta):
         texto = (acc.get("texto") or "").strip()
         proyecto = (acc.get("proyecto") or "").strip()
         try:
-            if tipo in ("agregar", "apunte") and texto and parece_secreto(texto):
-                tipo = "credencial"  # red de seguridad: una contraseña nunca va a las notas en texto plano
-                acc = dict(acc, usuario="", clave="", url="", nota=texto, texto="")
-                texto = ""
             if tipo == "credencial" and (acc.get("clave") or acc.get("nota")):
                 nombre_p = _proyecto_boveda(proyecto)
                 secretos += [acc.get("clave") or "", acc.get("nota") or ""]
