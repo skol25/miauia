@@ -267,6 +267,10 @@ def _aplicar_a(nota, tipo, **cambios):
         nueva.update(hecho=True, fecha_hecho="")
     elif tipo == "reabrir":
         nueva.update(hecho=False, fecha_hecho="")
+    elif tipo == "quitar_fecha":
+        if not nota["fecha"] and not nota["hora"]:
+            return False
+        nueva.update(fecha="", hora="")
     elif tipo == "reprogramar":
         fecha, hora = comun.limpiar_fecha(cambios.get("fecha")), comun.limpiar_hora(cambios.get("hora"))
         if not fecha and not hora:
@@ -309,7 +313,7 @@ def _recordar(pregunta, respuesta):
 
 VISTAS_APP = ["hoy", "pendientes", "proximas", "calendario", "proyecto", "hechas", "todas", "reuniones",
               "cita", "recordatorio", "compra", "idea", "dato", "michi", "avisos"]
-ACCIONES = ["agregar", "completar", "reabrir", "reprogramar", "editar", "mover", "borrar",
+ACCIONES = ["agregar", "completar", "reabrir", "reprogramar", "quitar_fecha", "editar", "mover", "borrar",
             "crear_proyecto", "apunte", "abrir"]
 
 ESQUEMA_PREGUNTA = {
@@ -340,6 +344,7 @@ Acciones (usa solo los campos que hagan falta; los demás van vacíos):
 - completar: marcar como hechas / quitar de pendientes / "ya lo hice". numeros.
 - reabrir: volver a poner como pendiente algo de HECHAS. numeros (los H).
 - reprogramar: cambiar fecha y/o hora. numeros, fecha, hora.
+- quitar_fecha: dejarla sin fecha ni hora (sigue pendiente). numeros.
 - editar: cambiar lo que dice una nota o su clase. numeros (uno), texto nuevo, clase.
 - mover: poner notas en un proyecto (se crea si no existe). numeros, proyecto. Para sacarlas de su proyecto: proyecto "ninguno".
 - borrar: SOLO si dice borrar o eliminar. numeros.
@@ -350,12 +355,15 @@ Acciones (usa solo los campos que hagan falta; los demás van vacíos):
 Puedes hacer varias acciones a la vez (ej.: crear un proyecto y mover tareas a él).
 Si solo es una pregunta, 'acciones' va vacía. Si no está claro a qué notas se refiere, no actúes y pregunta.
 Nunca inventes números. No tienes acceso a contraseñas ni credenciales: si te las piden, di que están en la pestaña Credenciales del proyecto.
-En 'respuesta' cuenta en una o dos frases lo que hiciste, o responde la pregunta.
+IMPORTANTE: nada cambia si no pones la acción en 'acciones'. Nunca digas que hiciste algo que no pusiste ahí.
+Si te piden algo que no puedes hacer con estas acciones, dilo con sinceridad.
+En 'respuesta' cuenta en una o dos frases lo que hiciste, o responde la pregunta. En 'respuesta' no escribas los números [N]: nombra las notas por lo que dicen.
 
 Ejemplos:
 "anota que mañana a las 3 tengo dentista" → agregar, clase cita, texto "Dentista", fecha de mañana, hora 15:00.
 "pasa la 2 y la 4 al proyecto Sputniq" → mover, numeros [2,4], proyecto "Sputniq".
 "cambia lo de Carlos para el viernes" → reprogramar, numeros [el de Carlos], fecha del viernes.
+"quítale la fecha a lo del banco" → quitar_fecha, numeros [el del banco].
 "ábreme el calendario" → abrir, vista "calendario".
 "guarda en los apuntes de TIODOL que el logo va en azul" → apunte, proyecto "TIODOL", texto "El logo va en azul"."""
 
@@ -366,6 +374,17 @@ def _numerar(nota, prefijo):
         extra.append(f"proyecto {nota['proyecto']}")
     return f"[{prefijo}] {comun.NOMBRE_TIPO.get(nota['tipo'], 'Dato')}: {nota['texto']}" + (
         f" — {' · '.join(extra)}" if extra else "")
+
+
+def _dice_que_hizo(texto):
+    """¿La respuesta afirma en primera persona que cambió algo? (sin ser una pregunta)"""
+    import re
+    if "?" in texto:
+        return False
+    t = comun.normalizar(texto)
+    return bool(re.search(r"\b(he|ya) (eliminado|borrado|quitado|marcado|movido|cambiado|actualizado|reprogramado|"
+                          r"agregado|anotado|creado|guardado|puesto|abierto)\b|\b(elimine|borre|quite|marque|movi|cambie|"
+                          r"actualice|reprograme|agregue|anote|guarde|puse)\b|^listo\b", t))
 
 
 def modo_pregunta(pregunta):
@@ -411,7 +430,8 @@ def modo_pregunta(pregunta):
             return otras[num - 201]
         return None
 
-    hechos, ir = [], None
+    log.info("Acciones pedidas por la IA: %s", json.dumps(datos.get("acciones"), ensure_ascii=False))
+    hechos, fallos, ir = [], [], None
     for acc in datos.get("acciones") or []:
         tipo = acc.get("tipo")
         texto = (acc.get("texto") or "").strip()
@@ -439,7 +459,7 @@ def modo_pregunta(pregunta):
                     ir = f"p:{p['nombre']}" if p else None
                 elif v in VISTAS_APP:
                     ir = v
-            elif tipo in ("completar", "reabrir", "reprogramar", "editar", "mover", "borrar"):
+            elif tipo in ("completar", "reabrir", "reprogramar", "quitar_fecha", "editar", "mover", "borrar"):
                 destino = ""
                 if tipo == "mover":
                     destino = "" if comun.normalizar(proyecto) in ("", "ninguno", "sin proyecto") else comun.asegurar_proyecto(proyecto)
@@ -454,16 +474,25 @@ def modo_pregunta(pregunta):
                             "completar": f"Marqué como hecha: {antes}",
                             "reabrir": f"Volví a pendientes: {antes}",
                             "reprogramar": f"Nueva fecha para {antes}: {_cuando(nota)}",
+                            "quitar_fecha": f"Le quité la fecha a: {antes}",
                             "editar": f"Cambié «{antes}» por «{nota['texto']}»",
                             "mover": f"Moví {antes} → " + (destino or "sin proyecto"),
                             "borrar": f"Borré: {antes}",
                         }[tipo])
+                    else:
+                        fallos.append(f"{tipo.replace('_', ' ')} «{antes}»")
                     if tipo == "editar":
                         break  # editar es de una sola nota
         except Exception:
             log.exception("No pude hacer la acción %s", acc)
 
     respuesta = (datos.get("respuesta") or "").strip()
+    if not hechos and not ir and _dice_que_hizo(respuesta):
+        # la IA "dice" que cambió algo pero no pidió ninguna acción válida: no le creemos
+        respuesta = ("No pude hacer ese cambio: no entendí bien qué nota era o qué hacer con ella. "
+                     "Prueba diciéndolo de otra forma, por ejemplo: «quítale la fecha a la tarea de Tiodol».")
+    if fallos:
+        respuesta += "\n\n" + "\n".join(f"✗ No pude: {f}" for f in fallos)
     if hechos:
         resumen = "\n".join(f"✓ {h}" for h in hechos)
         respuesta = f"{respuesta}\n\n{resumen}" if respuesta else resumen
