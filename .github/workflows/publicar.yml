@@ -1,0 +1,34 @@
+# Cada vez que publicas un "Release" con una etiqueta vX.Y.Z (por ejemplo v1.1.0),
+# GitHub construye el instalador Miauia-Setup-X.Y.Z.exe y lo agrega a ese release.
+# Las copias de Miauia instaladas lo detectan y ofrecen actualizar.
+name: Publicar versión
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  instalador:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Herramientas
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis
+          pip install pillow
+      - name: Construir instalador
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: python herramientas/construir.py --version "${TAG#v}" --repo "${GITHUB_REPOSITORY}"
+      - name: Publicar
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
+          tag_name: ${{ github.event.release.tag_name }}

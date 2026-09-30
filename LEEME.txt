@@ -1,0 +1,195 @@
+﻿ASISTENTE DE NOTAS Y REUNIONES
+==============================
+
+Todo funciona dentro de tu PC, sin internet y sin pagar nada. Mientras no lo
+usas, el asistente solo espera tus atajos de teclado y casi no gasta recursos.
+Los modelos de IA se cargan cuando lo activas y se descargan al terminar.
+
+
+INSTALACIÓN (una sola vez)
+--------------------------
+1. Asegúrate de que Ollama esté instalado y de tener los modelos
+   qwen3.5:4b y qwen3.5:9b (ya los tienes).
+2. Haz doble clic en  instalar.bat  y espera a que termine.
+   La primera vez descarga unas librerías y el modelo de voz (unos 500 MB).
+3. Al final aparece un ícono gris con un micrófono junto al reloj de Windows.
+   Si no lo ves, haz clic en la flechita ^ de la barra de tareas.
+
+Desde ahí el asistente arranca solo cada vez que prendes la PC. También queda
+un acceso directo "Asistente" en el escritorio.
+
+
+CÓMO SE USA
+-----------
+Cada atajo funciona igual: lo presionas una vez para empezar a hablar y otra
+vez para terminar. También puedes usar el botón "Detener" de la barrita que
+aparece abajo en la pantalla, o "Cancelar" si no quieres guardar nada.
+
+  Ctrl + Alt + N   ANOTAR
+      Ejemplos: "El jueves a las 3 tengo reunión con el cliente de MotocardVe"
+                "Tengo que comprar tinta para la impresora"
+                "La tarea de llamar a Carlos ya la hice"   (la marca como hecha)
+      Te aparece un aviso con lo que guardó.
+
+  Ctrl + Alt + P   PREGUNTAR
+      Ejemplos: "¿Qué tengo pendiente esta semana?"
+                "¿Qué se decidió en la última reunión?"
+      Se abre una ventanita con la respuesta.
+
+  Ctrl + Alt + R   GRABAR REUNIÓN
+      Presiónalo al empezar la reunión y otra vez al terminar. Graba tu
+      micrófono y también lo que suena en la PC (Meet, Zoom, Teams...).
+      Unos minutos después te avisa que el resumen está listo.
+
+Colores del ícono:  gris = en reposo · rojo = escuchando · amarillo = procesando
+
+APP "MIS NOTAS"
+--------------
+Doble clic en el ícono del asistente (o en "Mis notas" del escritorio) abre
+una ventana para ver y manejar todo:
+
+  - A la izquierda: Hoy, Pendientes, Próximas fechas, cada tipo de nota,
+    Hechas y Reuniones.
+  - Marca una tarea como hecha con el circulito.
+  - Doble clic en una nota (o el lápiz) para editarla; la papelera para borrarla.
+  - Arriba puedes escribir una nota nueva. Si dejas "Que la IA la ordene",
+    el asistente decide el tipo y la fecha por ti.
+  - Abajo puedes hacerle preguntas a tus notas.
+  - Ctrl+F para buscar.
+
+Solo ocupa memoria mientras está abierta. Si el asistente anota algo por voz
+con la ventana abierta, aparece solo en unos segundos.
+
+CALENDARIO
+----------
+En "Mis notas" > Calendario ves el mes completo con tus citas, tareas y
+reuniones de cada día. Haz clic en un día para ver el detalle y anotar algo
+directamente para esa fecha. Puedes filtrar por proyecto.
+
+
+PROYECTOS
+---------
+Tus notas se pueden separar por proyecto (por ejemplo MotocardVe, Sputniq,
+TIODOL...). Crea uno con "Nuevo proyecto" en la barra de la izquierda.
+
+  - Cuando anotas algo, la IA lo mete en el proyecto que corresponda si lo
+    nombras o hablas de su tema. Si dices "para el proyecto X" y no existe,
+    lo crea.
+  - Con el lápiz del proyecto le cambias nombre, color y una descripción.
+    La descripción ayuda a la IA a reconocerlo (cliente, tema, palabras).
+  - Las reuniones también se asignan a un proyecto, con sus tareas.
+  - Puedes preguntar: "¿qué tengo pendiente de Sputniq?"
+
+
+AVISOS
+------
+Cuando una cita o tarea tiene hora, el asistente te avisa:
+  - Un rato antes (10 minutos, lo puedes cambiar) y a la hora exacta.
+  - Aparece una tarjeta abajo a la derecha con tu michi, con los botones
+    "Listo" (la marca como hecha) y "Posponer 10 min".
+  - Suena el sonido de notificación y, si quieres, te lo lee en voz alta.
+  - Cada mañana (8:00 por defecto) te da un resumen de lo que tienes hoy.
+  - Si la PC estaba apagada a esa hora, te avisa al encenderla (hasta 2
+    horas después).
+Todo se ajusta en "Mis notas" > Avisos. El asistente tiene que estar
+abierto (el ícono junto al reloj) para poder avisarte.
+
+
+TU MICHI
+--------
+Un gatito pixel art (blanco y negro de fábrica) acompaña al asistente:
+
+  - Cuando "Mis notas" está minimizada o cerrada, camina encima de la barra
+    de Windows. Cuando la abres, se pasa a caminar sobre la barra de
+    preguntar de la app.
+  - Hace cosas de gato: camina, se sienta, se lava la cara y se duerme.
+  - Te muestra lo que hace el asistente: para las orejas cuando te escucha,
+    se pone audífonos en las reuniones, se queda pensando mientras procesa
+    y salta de alegría cuando termina. Los avisos te los dice en un globito.
+  - Clic en el gato: abre "Mis notas". Clic derecho: menú rápido.
+    Lo puedes arrastrar para moverlo.
+  - Se esconde solo si pones algo en pantalla completa (videos, juegos...).
+  - Para cambiarle el nombre, los colores, el accesorio, el tamaño o la
+    personalidad: en "Mis notas" > "Personalizar michi". Hay gatos
+    esmoquin, negros, blancos, naranjas, grises, crema, calicó (tricolor),
+    siamés y atigrado, y puedes ajustar cada color.
+
+VARIOS MICHIS Y JUEGO
+  - Puedes tener hasta 8 michis: en "Mis notas" > "Mis michis" >
+    "Agregar michi". El primero es el del asistente (el que te avisa); los
+    demás son compañeros que pasean, juegan y duermen juntos.
+  - Clic en un michi: le haces mimos (salen corazones).
+    Doble clic: abre "Mis notas". Arrastrar: lo mueves.
+  - En la barra de Windows tienes tres formas de abrir el juego:
+      * el botón de patita 🐾 que queda a la derecha, encima de la barra,
+      * clic derecho sobre cualquier michi (la comida cae donde hiciste clic),
+      * el ícono del asistente junto al reloj > Michis.
+  - En la app: la patita 🐾 de la barra de preguntar. Ahí eliges si jugar
+    "aquí en la app" o "en la barra de Windows" (minimiza la app y los
+    michis comen o juegan afuera).
+  - Opciones:
+      Darles comida   -> aparece un plato y los que tienen hambre van a comer.
+      Dar un premio   -> un pescadito para el que esté más cerca.
+      Estambre        -> lo persiguen y lo patean. Arrástralo con el mouse y
+                         suéltalo para lanzarlo.
+  - Cada michi tiene "barriga" y "alegría" (se ven en "Mis michis"). Con el
+    tiempo les da hambre y, si pasa mucho, te lo dicen con un globito. Nunca
+    les pasa nada malo: solo se ponen más mimosos.
+
+Mientras duerme casi no gasta nada. Caminando usa muy poquito procesador.
+
+Con clic derecho en el ícono también puedes:
+  - Escribir una nota o hacer una pregunta por escrito (sin hablar)
+  - Abrir tus notas en el Bloc de notas
+  - Abrir la carpeta de reuniones
+  - Cambiar la configuración
+  - Salir
+
+
+DÓNDE QUEDA TODO
+----------------
+  datos\notas.md          Todas tus notas y tareas. Puedes editarlo a mano.
+  datos\reuniones\        Un archivo por reunión con resumen, decisiones,
+                          tareas y la transcripción completa.
+  datos\registro.log      Registro de errores, por si algo falla.
+
+El audio se borra solo después de procesarlo.
+
+
+CONSEJOS
+--------
+- En reuniones usa audífonos si puedes: así el micrófono no capta también
+  a los demás y la transcripción sale más limpia.
+- Si vas a grabar a otras personas, avísales que estás tomando notas.
+- Una reunión de 30 minutos puede tardar unos 5 a 10 minutos en procesarse.
+  Mientras tanto puedes seguir usando la PC con normalidad.
+
+
+CONFIGURACIÓN (config.json)
+---------------------------
+Clic derecho en el ícono > Configuración. Después de cambiar algo, cierra el
+asistente (Salir) y ábrelo de nuevo desde el escritorio.
+
+  atajo_anotar / atajo_preguntar / atajo_reunion   Cambiar los atajos.
+  whisper_reunion        "small" (rápido) o "large-v3-turbo" (más preciso,
+                         más lento). La primera vez lo descarga solo.
+  modelo_rapido          Modelo para anotar y preguntar (qwen3.5:4b).
+  modelo_reunion         Modelo para resumir reuniones (qwen3.5:9b).
+  mantener_modelo_cargado  Cuánto tiempo queda el modelo en memoria después
+                         de usarlo. "1m" = 1 minuto. "0" = se descarga al
+                         instante.
+  leer_respuestas_en_voz  true para que te lea las respuestas en voz alta.
+  max_segundos_nota      Tiempo máximo de una nota o pregunta por voz.
+
+
+SI ALGO NO FUNCIONA
+-------------------
+- "No pude abrir el micrófono": en Windows ve a Configuración > Privacidad y
+  seguridad > Micrófono y activa "Permitir que las aplicaciones de escritorio
+  accedan al micrófono".
+- Un atajo no responde: puede que otro programa ya lo use. Cámbialo en
+  config.json (por ejemplo "ctrl+shift+1").
+- "No encuentro Ollama" o "Ollama no respondió": abre Ollama desde el menú
+  Inicio y vuelve a intentar.
+- Para quitarlo del arranque de Windows: presiona Win+R, escribe
+  shell:startup y borra el acceso directo "Asistente".

@@ -1,0 +1,10 @@
+# datos personales y cosas que se generan solas
+datos/
+config.json
+.venv/
+python/
+build/
+dist/
+__pycache__/
+*.pyc
+subir_a_github.bat

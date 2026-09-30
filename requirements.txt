@@ -1,0 +1,7 @@
+faster-whisper>=1.1
+PyAudioWPatch>=0.2.12
+numpy
+pystray>=0.19
+Pillow
+keyboard>=0.13
+pywebview>=5.0
