@@ -21,6 +21,7 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 log = comun.configurar_registro("trabajador")
 CFG = comun.cargar_config()
+QUIEN = (CFG.get("nombre_usuario") or "").strip() or "la persona"  # para los mensajes a la IA
 
 
 # ---------------------------------------------------------------- voz a texto
@@ -152,8 +153,9 @@ ESQUEMA_NOTA = {
             "fecha": {"type": "string"},
             "hora": {"type": "string"},
             "proyecto": {"type": "string"},
+            "numero": {"type": "integer"},
         },
-        "required": ["accion", "tipo", "texto", "fecha", "hora", "proyecto"],
+        "required": ["accion", "tipo", "texto", "fecha", "hora", "proyecto", "numero"],
     }}},
     "required": ["items"],
 }
@@ -161,9 +163,10 @@ ESQUEMA_NOTA = {
 
 def modo_nota(texto, proyecto_fijo=""):
     sistema = (
-        "Eres el asistente personal de Andrés y organizas lo que te dicta. "
+        f"Eres el asistente personal de {QUIEN} y organizas lo que te dicta. "
         "Convierte el mensaje en una o varias notas. Reglas:\n"
         "- accion: 'completar' solo si dice que algo ya lo hizo o que lo marques como hecho; si no, 'agregar'.\n"
+        "- numero: si accion es 'completar', el número [N] de la tarea pendiente de la lista; si no, 0.\n"
         "- tipo: tarea (algo que debe hacer), cita (reunión o evento con hora/día), recordatorio, "
         "compra, idea o dato (información para recordar, como un número o una clave de algo).\n"
         "- texto: corto y claro, en español, sin frases como 'anota que'. Mantén nombres, números y cifras exactos.\n"
@@ -175,7 +178,8 @@ def modo_nota(texto, proyecto_fijo=""):
         "Responde solo con JSON."
     )
     usuario = (f"Ahora es {comun.fecha_larga()}.\nCalendario:\n{comun.calendario_proximo()}\n\n"
-               f"Proyectos de Andrés:\n{comun.proyectos_para_ia()}\n\n"
+               f"Proyectos:\n{comun.proyectos_para_ia()}\n\n"
+               f"Tareas pendientes:\n{_texto_pendientes(_pendientes()) or '(ninguna)'}\n\n"
                f"Mensaje: {texto}")
     try:
         asegurar_ollama()
@@ -193,8 +197,14 @@ def modo_nota(texto, proyecto_fijo=""):
         if not contenido:
             continue
         if item.get("accion") == "completar":
-            linea = comun.completar_tarea(contenido)
-            (hechas if linea else no_encontradas).append(contenido)
+            pend = _pendientes()
+            n = item.get("numero") or 0
+            if 1 <= n <= len(pend):
+                _aplicar_a(pend[n - 1], "completar")
+                hechas.append(pend[n - 1]["texto"])
+            else:
+                linea = comun.completar_tarea(contenido)
+                (hechas if linea else no_encontradas).append(contenido)
         else:
             proyecto = proyecto_fijo or (item.get("proyecto") or "").strip()
             proyecto = comun.asegurar_proyecto(proyecto) if proyecto else ""
@@ -214,20 +224,143 @@ def modo_nota(texto, proyecto_fijo=""):
     return {"ok": True, "titulo": "Nota guardada" if guardadas else "Listo", "mensaje": "\n".join(lineas)}
 
 
+# ---------------------------------------------------------------- preguntar (y actuar sobre las tareas)
+
+CONVERSACION = os.path.join(comun.DATOS, "conversacion.json")
+
+
+def _pendientes():
+    notas = [n for n in comun.listar_notas() if n["casilla"] and not n["hecho"]]
+    return sorted(notas, key=lambda n: (n["fecha"] or "9999", n["hora"] or "99", n["orden"]))
+
+
+def _cuando(n):
+    if not n["fecha"]:
+        return "sin fecha"
+    import datetime
+    d = datetime.date.fromisoformat(n["fecha"])
+    hoy = comun.ahora().date()
+    txt = f"{comun.DIAS[d.weekday()]} {d.day} de {comun.MESES[d.month - 1]}" + (f" a las {n['hora']}" if n["hora"] else "")
+    if d < hoy:
+        return f"vencía el {txt} (ATRASADA)"
+    if d == hoy:
+        return f"es HOY" + (f" a las {n['hora']}" if n["hora"] else "")
+    return f"para el {txt}"
+
+
+def _texto_pendientes(pend):
+    filas = []
+    for i, n in enumerate(pend, 1):
+        extra = f" · proyecto {n['proyecto']}" if n["proyecto"] else ""
+        filas.append(f"[{i}] {comun.NOMBRE_TIPO.get(n['tipo'], 'Tarea')}: {n['texto']} — {_cuando(n)}{extra}")
+    return "\n".join(filas)
+
+
+def _aplicar_a(nota, tipo, fecha="", hora=""):
+    if tipo == "borrar":
+        return comun.reemplazar_linea(nota["linea"], None)
+    nueva = dict(nota)
+    if tipo == "completar":
+        nueva.update(hecho=True, fecha_hecho="")
+    elif tipo == "reabrir":
+        nueva.update(hecho=False, fecha_hecho="")
+    elif tipo == "reprogramar":
+        nueva.update(fecha=comun.limpiar_fecha(fecha) or nota["fecha"], hora=comun.limpiar_hora(hora) or nota["hora"])
+    return comun.reemplazar_linea(nota["linea"], comun.componer_linea(nueva))
+
+
+def _conversacion():
+    try:
+        with open(CONVERSACION, "r", encoding="utf-8") as f:
+            datos = json.load(f)
+        if time.time() - datos.get("t", 0) < 30 * 60:  # la charla "se olvida" tras 30 minutos
+            return datos.get("turnos", [])
+    except Exception:
+        pass
+    return []
+
+
+def _recordar(pregunta, respuesta):
+    turnos = (_conversacion() + [{"p": pregunta, "r": respuesta}])[-3:]
+    with open(CONVERSACION, "w", encoding="utf-8") as f:
+        json.dump({"t": time.time(), "turnos": turnos}, f, ensure_ascii=False)
+
+
+ESQUEMA_PREGUNTA = {
+    "type": "object",
+    "properties": {
+        "respuesta": {"type": "string"},
+        "acciones": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "tipo": {"type": "string", "enum": ["completar", "reabrir", "reprogramar", "borrar"]},
+                "numeros": {"type": "array", "items": {"type": "integer"}},
+                "fecha": {"type": "string"},
+                "hora": {"type": "string"},
+            },
+            "required": ["tipo", "numeros", "fecha", "hora"],
+        }},
+    },
+    "required": ["respuesta", "acciones"],
+}
+
+
 def modo_pregunta(pregunta):
     asegurar_ollama()
-    contexto = comun.contexto_para_pregunta(pregunta)
+    pend = _pendientes()
+    todas = comun.listar_notas()
+    hechas = sorted([n for n in todas if n["hecho"]], key=lambda n: -n["orden"])[:12]
+    otras = [n["linea"] for n in todas if not n["casilla"]]
+    extra = comun.contexto_para_pregunta(pregunta, limite=9000, solo_extra=True)
+    charla = "\n".join(f"Pregunta: {t['p']}\nRespuesta: {t['r']}" for t in _conversacion())
     sistema = (
-        "Eres el asistente personal de Andrés. Responde en español, de forma breve y directa, "
-        "usando SOLO la información de sus notas y reuniones. Si la respuesta no está ahí, dilo "
-        "con naturalidad. Las tareas con [ ] están pendientes y las que tienen [x] ya están hechas. "
-        "Cuando hables de fechas, di el día de la semana."
+        f"Eres Miauia, el asistente personal de {QUIEN}. Respondes en español, breve y directo, usando SOLO "
+        "la información que te doy. La lista TAREAS PENDIENTES es la verdad: si tiene elementos, hay "
+        "pendientes (menciónalos, empezando por los atrasados y los de hoy). Cuando hables de fechas, di el día.\n"
+        "Además de responder, puedes ACTUAR sobre las tareas si te lo piden claramente:\n"
+        "- completar: marcar como hechas / quitar de pendientes / 'ya lo hice'.\n"
+        "- reabrir: volver a poner como pendiente algo de HECHAS (usa su número H).\n"
+        "- reprogramar: cambiar la fecha (AAAA-MM-DD) o la hora (HH:MM).\n"
+        "- borrar: SOLO si dice borrar o eliminar.\n"
+        "En 'numeros' pon los números [N] de la lista (para reabrir, los números de HECHAS). "
+        "Si solo es una pregunta, 'acciones' va vacía. Si la petición es ambigua, no actúes y pregunta. "
+        "En 'respuesta' cuenta lo que hiciste o responde la pregunta."
     )
-    usuario = (f"Ahora es {comun.fecha_larga()}.\nCalendario:\n{comun.calendario_proximo()}\n\n"
-               f"=== NOTAS Y REUNIONES ===\n{contexto or '(todavía no hay notas)'}\n=== FIN ===\n\n"
-               f"Pregunta: {pregunta}")
-    respuesta = conversar(CFG["modelo_rapido"], sistema, usuario)
-    return {"ok": True, "titulo": "Respuesta", "pregunta": pregunta, "mensaje": respuesta}
+    usuario = (
+        f"Ahora es {comun.fecha_larga()}.\nCalendario:\n{comun.calendario_proximo()}\n\n"
+        f"=== TAREAS PENDIENTES ({len(pend)}) ===\n{_texto_pendientes(pend) or '(ninguna)'}\n\n"
+        f"=== HECHAS HACE POCO ===\n" + ("\n".join(f"[H{100 + i}] {n['texto']}" for i, n in enumerate(hechas, 1)) or "(ninguna)")
+        + f"\n\n=== NOTAS, IDEAS Y DATOS ===\n" + ("\n".join(otras[-40:]) or "(ninguna)")
+        + (f"\n\n=== REUNIONES Y APUNTES ===\n{extra}" if extra else "")
+        + (f"\n\n=== CONVERSACIÓN RECIENTE ===\n{charla}" if charla else "")
+        + f"\n\nMensaje: {pregunta}"
+    )
+    try:
+        datos = leer_json(conversar(CFG["modelo_rapido"], sistema, usuario, formato=ESQUEMA_PREGUNTA))
+    except Exception:
+        log.exception("La respuesta no vino en el formato esperado; pregunto sin acciones")
+        datos = {"respuesta": conversar(CFG["modelo_rapido"], sistema.split("Además de responder")[0], usuario), "acciones": []}
+
+    hechos = []
+    for acc in datos.get("acciones") or []:
+        tipo = acc.get("tipo")
+        for num in acc.get("numeros") or []:
+            if tipo == "reabrir" and 101 <= num <= 100 + len(hechas):
+                nota = hechas[num - 101]
+            elif 1 <= num <= len(pend):
+                nota = pend[num - 1]
+            else:
+                continue
+            if _aplicar_a(nota, tipo, acc.get("fecha", ""), acc.get("hora", "")):
+                hechos.append((tipo, nota["texto"]))
+    respuesta = (datos.get("respuesta") or "").strip()
+    if hechos:
+        verbo = {"completar": "Marqué como hecha", "reabrir": "Volví a pendientes", "reprogramar": "Cambié la fecha de",
+                 "borrar": "Borré"}
+        resumen = "\n".join(f"✓ {verbo[t]}: {txt}" for t, txt in hechos)
+        respuesta = f"{respuesta}\n\n{resumen}" if respuesta else resumen
+    _recordar(pregunta, respuesta)
+    return {"ok": True, "titulo": "Respuesta", "pregunta": pregunta, "mensaje": respuesta, "cambios": len(hechos)}
 
 
 ESQUEMA_REUNION = {
@@ -281,14 +414,14 @@ def resumir_reunion(transcripcion):
         material = "\n\n".join(f"Apuntes parte {i}:\n{p}" for i, p in enumerate(parciales, 1))
 
     sistema = (
-        "Eres el asistente de Andrés y resumes reuniones en español sencillo. 'Yo' es Andrés; "
+        f"Eres el asistente de {QUIEN} y resumes reuniones en español sencillo. 'Yo' es {QUIEN}; "
         "'Otros' son las demás personas (usa sus nombres si se mencionan). Devuelve JSON con: "
         "titulo (máx. 8 palabras), proyecto (el nombre exacto de uno de sus proyectos si la reunión "
         "es claramente sobre él; si no, vacío), resumen (un párrafo), decisiones, tareas (tarea, "
         "responsable, fecha AAAA-MM-DD o vacía) y pendientes (temas que quedaron abiertos). No inventes nada."
     )
     usuario = (f"Fecha de la reunión: {comun.fecha_larga()}.\nCalendario:\n{comun.calendario_proximo()}\n\n"
-               f"Proyectos de Andrés:\n{comun.proyectos_para_ia()}\n\n"
+               f"Proyectos:\n{comun.proyectos_para_ia()}\n\n"
                f"{material}")
     return leer_json(conversar(modelo, sistema, usuario, formato=ESQUEMA_REUNION, contexto=contexto))
 

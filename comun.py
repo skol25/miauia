@@ -288,9 +288,10 @@ def _resumenes_de_reuniones():
     return trozos
 
 
-def contexto_para_pregunta(pregunta, limite=16000):
-    """Arma el material que el modelo leerá para responder, sin pasarse del límite."""
-    notas = [l for l in leer_notas().split("\n") if l.startswith("- ")]
+def contexto_para_pregunta(pregunta, limite=16000, solo_extra=False):
+    """Arma el material que el modelo leerá para responder, sin pasarse del límite.
+    solo_extra=True: solo reuniones y apuntes (las notas ya van aparte)."""
+    notas = [] if solo_extra else [l for l in leer_notas().split("\n") if l.startswith("- ")]
     reuniones = _resumenes_de_reuniones()
     # los apuntes de cada proyecto también sirven para responder (las credenciales NO: esas nunca las lee la IA)
     for p in listar_proyectos():

@@ -1097,6 +1097,7 @@ formPregunta.onsubmit = async e => {
       <div class="q">${esc(q)}</div><div class="a">${esc(r.mensaje)}</div></div>`;
     document.getElementById("cerrarResp").onclick = () => respuesta.innerHTML = "";
     pregunta.value = "";
+    if (r.cambios) await recargar();
   } catch (err) {
     respuesta.innerHTML = `<div class="respuesta"><div class="a">No se pudo preguntar: ${esc(err)}</div></div>`;
   } finally { ocupado = false; btnPreguntar.disabled = false; gatoFijar(null); gatoFestejar(); }
