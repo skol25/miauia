@@ -1094,7 +1094,7 @@ formPregunta.onsubmit = async e => {
   try {
     const r = await api("preguntar", q);
     respuesta.innerHTML = `<div class="respuesta"><button class="icono" id="cerrarResp" title="Cerrar">${I.cerrar}</button>
-      <div class="q">${esc(q)}</div><div class="a">${esc(r.mensaje)}</div></div>`;
+      <div class="q">${esc(r.pregunta || q)}</div><div class="a">${esc(r.mensaje)}</div></div>`;
     document.getElementById("cerrarResp").onclick = () => respuesta.innerHTML = "";
     pregunta.value = "";
     if (r.cambios) await recargar();

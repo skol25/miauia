@@ -187,6 +187,9 @@ def modo_nota(texto, proyecto_fijo=""):
         items = datos.get("items") or []
     except Exception as e:
         log.exception("La IA no pudo ordenar la nota")
+        if parece_secreto(texto):
+            guardar_credencial(_proyecto_boveda(proyecto_fijo), "Acceso", "", "", "", texto)
+            return {"ok": True, "titulo": "Guardado en Credenciales", "mensaje": "🔒 Parecía una contraseña: la guardé cifrada."}
         linea = comun.agregar_nota("dato", texto, proyecto=proyecto_fijo)
         return {"ok": True, "titulo": "Nota guardada (sin ordenar)",
                 "mensaje": f"{texto}\n\nLa IA no respondió: {e}", "linea": linea}
@@ -205,6 +208,10 @@ def modo_nota(texto, proyecto_fijo=""):
             else:
                 linea = comun.completar_tarea(contenido)
                 (hechas if linea else no_encontradas).append(contenido)
+        elif parece_secreto(contenido):
+            nombre_p = _proyecto_boveda(proyecto_fijo or item.get("proyecto"))
+            guardar_credencial(nombre_p, "Acceso", "", "", "", contenido)
+            guardadas.append(f"🔒 Lo guardé cifrado en Credenciales de {nombre_p} (parecía una contraseña)")
         else:
             proyecto = proyecto_fijo or (item.get("proyecto") or "").strip()
             proyecto = comun.asegurar_proyecto(proyecto) if proyecto else ""
@@ -313,7 +320,7 @@ def _recordar(pregunta, respuesta):
 
 VISTAS_APP = ["hoy", "pendientes", "proximas", "calendario", "proyecto", "hechas", "todas", "reuniones",
               "cita", "recordatorio", "compra", "idea", "dato", "michi", "avisos"]
-ACCIONES = ["agregar", "completar", "reabrir", "reprogramar", "quitar_fecha", "editar", "mover", "borrar",
+ACCIONES = ["agregar", "completar", "reabrir", "reprogramar", "quitar_fecha", "editar", "credencial", "a_boveda", "mover", "borrar",
             "crear_proyecto", "apunte", "abrir"]
 
 ESQUEMA_PREGUNTA = {
@@ -331,8 +338,11 @@ ESQUEMA_PREGUNTA = {
                 "hora": {"type": "string"},
                 "proyecto": {"type": "string"},
                 "vista": {"type": "string", "enum": [""] + VISTAS_APP},
+                "usuario": {"type": "string"},
+                "clave": {"type": "string"},
+                "url": {"type": "string"},
             },
-            "required": ["tipo", "numeros", "clase", "texto", "fecha", "hora", "proyecto", "vista"],
+            "required": ["tipo", "numeros", "clase", "texto", "fecha", "hora", "proyecto", "vista", "usuario", "clave", "url"],
         }},
     },
     "required": ["respuesta", "acciones"],
@@ -349,12 +359,16 @@ Acciones (usa solo los campos que hagan falta; los demás van vacíos):
 - mover: poner notas en un proyecto (se crea si no existe). numeros, proyecto. Para sacarlas de su proyecto: proyecto "ninguno".
 - borrar: SOLO si dice borrar o eliminar. numeros.
 - crear_proyecto: proyecto (nombre), texto (descripción, opcional).
-- apunte: escribir en los apuntes libres de un proyecto. proyecto, texto.
+- apunte: escribir en los apuntes libres de un proyecto (información, enlaces, pasos, contactos). proyecto, texto.
+  Si dice "guarda en las notas/apuntes de <proyecto>" algo que es información (no una tarea), usa apunte.
+- credencial: guardar un acceso CIFRADO en la pestaña Credenciales del proyecto. proyecto, texto (nombre corto, ej. "Admin Motocard"), usuario, clave, url.
+  TODA contraseña, clave, token o acceso va SIEMPRE con credencial, nunca con agregar ni apunte.
+- a_boveda: pasar a Credenciales (cifrado) una nota que tiene una contraseña, y quitarla de las notas. numeros, texto (nombre corto).
 - abrir: mostrar una pantalla de la app. vista (hoy, pendientes, proximas, calendario, hechas, todas, reuniones, cita, recordatorio, compra, idea, dato, michi, avisos) o vista "proyecto" + proyecto.
 'numeros' son los números entre corchetes de las listas: pendientes [1], [2]…; hechas [101]…; otras notas [201]…
 Puedes hacer varias acciones a la vez (ej.: crear un proyecto y mover tareas a él).
 Si solo es una pregunta, 'acciones' va vacía. Si no está claro a qué notas se refiere, no actúes y pregunta.
-Nunca inventes números. No tienes acceso a contraseñas ni credenciales: si te las piden, di que están en la pestaña Credenciales del proyecto.
+Nunca inventes números. No puedes LEER las credenciales guardadas: si te piden una, di que está en la pestaña Credenciales del proyecto. Nunca repitas una contraseña en 'respuesta'.
 IMPORTANTE: nada cambia si no pones la acción en 'acciones'. Nunca digas que hiciste algo que no pusiste ahí.
 Si te piden algo que no puedes hacer con estas acciones, dilo con sinceridad.
 En 'respuesta' cuenta en una o dos frases lo que hiciste, o responde la pregunta. En 'respuesta' no escribas los números [N]: nombra las notas por lo que dicen.
@@ -365,7 +379,8 @@ Ejemplos:
 "cambia lo de Carlos para el viernes" → reprogramar, numeros [el de Carlos], fecha del viernes.
 "quítale la fecha a lo del banco" → quitar_fecha, numeros [el del banco].
 "ábreme el calendario" → abrir, vista "calendario".
-"guarda en los apuntes de TIODOL que el logo va en azul" → apunte, proyecto "TIODOL", texto "El logo va en azul"."""
+"guarda en los apuntes de TIODOL que el logo va en azul" → apunte, proyecto "TIODOL", texto "El logo va en azul".
+"guarda en Motocard el acceso admin@x.com clave Abc123" → credencial, proyecto "Motocard", texto "Admin", usuario "admin@x.com", clave "Abc123"."""
 
 
 def _numerar(nota, prefijo):
@@ -374,6 +389,54 @@ def _numerar(nota, prefijo):
         extra.append(f"proyecto {nota['proyecto']}")
     return f"[{prefijo}] {comun.NOMBRE_TIPO.get(nota['tipo'], 'Dato')}: {nota['texto']}" + (
         f" — {' · '.join(extra)}" if extra else "")
+
+
+# ---------------------------------------------------------------- contraseñas: siempre a la bóveda cifrada
+
+import re as _re
+PALABRAS_SECRETAS = _re.compile(r"\b(contrase(n|ñ)a|password|passwd|clave|credencial(es)?|token|api ?key|secret|pin|pass)\b", _re.I)
+
+
+def parece_secreto(texto):
+    """Tiene una palabra como 'clave' o 'contraseña' Y algo con pinta de contraseña."""
+    texto = texto or ""
+    return bool(PALABRAS_SECRETAS.search(texto)) and bool(_trozos_secretos([texto + " x"]))
+
+
+def _proyecto_boveda(nombre):
+    return comun.asegurar_proyecto(nombre) if (nombre or "").strip() else comun.asegurar_proyecto("Personal")
+
+
+def guardar_credencial(proyecto, nombre, usuario, clave, url, nota):
+    import boveda
+    boveda.guardar({"proyecto": proyecto, "nombre": nombre, "usuario": usuario, "clave": clave or "",
+                    "url": url, "nota": nota})
+
+
+def _trozos_secretos(secretos):
+    """Palabras que parecen contraseñas o tokens dentro de lo que se guardó en la bóveda."""
+    trozos = set()
+    normales = {comun.normalizar(x["nombre"]) for x in comun.listar_proyectos()}
+    for s in secretos:
+        s = (s or "").strip()
+        if not s:
+            continue
+        if " " not in s:
+            trozos.add(s)
+        for p in _re.split(r"[\s,;]+", s):
+            p = p.strip(".:()\"'")
+            if _re.fullmatch(r"\d{1,2}(:\d\d)?(am|pm)?|\d{4}-\d\d-\d\d|\d{1,2}/\d{1,2}(/\d{2,4})?", p, _re.I):
+                continue  # horas y fechas
+            if len(p) >= 4 and "@" not in p and not p.lower().startswith("http") and (
+                    (_re.search(r"\d", p) and not _re.fullmatch(r"\d{1,2}(:\d\d)?|\d{4}-\d\d-\d\d", p)) or (len(p) >= 6 and ( _re.search(r"[^\w]", p) or (_re.search(r"[a-z]", p) and _re.search(r"[A-Z]", p[1:]))))) and comun.normalizar(p) not in normales:
+                trozos.add(p)
+    return sorted(trozos, key=len, reverse=True)
+
+
+def tapar(texto, secretos):
+    for t in _trozos_secretos(secretos):
+        texto = texto.replace(t, "••••••")
+    return texto
 
 
 def _dice_que_hizo(texto):
@@ -430,14 +493,36 @@ def modo_pregunta(pregunta):
             return otras[num - 201]
         return None
 
-    log.info("Acciones pedidas por la IA: %s", json.dumps(datos.get("acciones"), ensure_ascii=False))
-    hechos, fallos, ir = [], [], None
+    hechos, fallos, ir, secretos = [], [], None, []
     for acc in datos.get("acciones") or []:
         tipo = acc.get("tipo")
         texto = (acc.get("texto") or "").strip()
         proyecto = (acc.get("proyecto") or "").strip()
         try:
-            if tipo == "agregar" and texto:
+            if tipo in ("agregar", "apunte") and texto and parece_secreto(texto):
+                tipo = "credencial"  # red de seguridad: una contraseña nunca va a las notas en texto plano
+                acc = dict(acc, usuario="", clave="", url="", nota=texto, texto="")
+                texto = ""
+            if tipo == "credencial" and (acc.get("clave") or acc.get("nota")):
+                nombre_p = _proyecto_boveda(proyecto)
+                secretos += [acc.get("clave") or "", acc.get("nota") or ""]
+                if texto and parece_secreto(texto):
+                    secretos.append(texto)
+                    texto = ""
+                guardar_credencial(nombre_p, texto or "Acceso", acc.get("usuario", ""), acc.get("clave", ""),
+                                   acc.get("url", ""), acc.get("nota", ""))
+                hechos.append(f"🔒 Guardé el acceso «{texto or 'Acceso'}» cifrado en Credenciales de {nombre_p}")
+            elif tipo == "a_boveda":
+                for num in dict.fromkeys(acc.get("numeros") or []):
+                    nota = buscar(num)
+                    if not nota:
+                        continue
+                    nombre_p = _proyecto_boveda(nota["proyecto"])
+                    secretos.append(nota["texto"])
+                    guardar_credencial(nombre_p, texto or "Acceso", "", "", "", nota["texto"])
+                    comun.reemplazar_linea(nota["linea"], None)
+                    hechos.append(f"🔒 Pasé una nota a Credenciales de {nombre_p} (cifrada) y la quité de las notas")
+            elif tipo == "agregar" and texto:
                 clase = acc.get("clase") or "tarea"
                 comun.agregar_nota(clase, texto, acc.get("fecha", ""), acc.get("hora", ""), proyecto=proyecto)
                 cuando = " ".join(x for x in (comun.limpiar_fecha(acc.get("fecha")), comun.limpiar_hora(acc.get("hora"))) if x)
@@ -486,7 +571,8 @@ def modo_pregunta(pregunta):
         except Exception:
             log.exception("No pude hacer la acción %s", acc)
 
-    respuesta = (datos.get("respuesta") or "").strip()
+    respuesta = tapar(datos.get("respuesta") or "", secretos).strip()
+    log.info("Acciones pedidas por la IA: %s", tapar(json.dumps(datos.get("acciones"), ensure_ascii=False), secretos))
     if not hechos and not ir and _dice_que_hizo(respuesta):
         # la IA "dice" que cambió algo pero no pidió ninguna acción válida: no le creemos
         respuesta = ("No pude hacer ese cambio: no entendí bien qué nota era o qué hacer con ella. "
@@ -496,8 +582,9 @@ def modo_pregunta(pregunta):
     if hechos:
         resumen = "\n".join(f"✓ {h}" for h in hechos)
         respuesta = f"{respuesta}\n\n{resumen}" if respuesta else resumen
-    _recordar(pregunta, respuesta)
-    return {"ok": True, "titulo": "Respuesta", "pregunta": pregunta, "mensaje": respuesta,
+    respuesta = tapar(respuesta, secretos)
+    _recordar(tapar(pregunta, secretos), respuesta)
+    return {"ok": True, "titulo": "Respuesta", "pregunta": tapar(pregunta, secretos), "mensaje": respuesta,
             "cambios": len(hechos), "ir": ir}
 
 
