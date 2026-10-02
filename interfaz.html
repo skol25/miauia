@@ -158,10 +158,15 @@
   /* preguntar */
   .preguntar { border-top: 1px solid var(--borde); background: var(--fondo); }
   .preguntar .centro { padding: 12px 48px 16px; }
-  .respuesta { background: #1f2327; border: 1px solid #2b3a48; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; position: relative; max-height: 240px; overflow-y: auto; }
+  .respuesta { background: #1f2327; border: 1px solid #2b3a48; border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; position: relative; max-height: 320px; overflow-y: auto; }
   .respuesta .q { color: var(--suave); font-size: 12.5px; margin-bottom: 4px; padding-right: 30px; }
   .respuesta .a { white-space: pre-wrap; }
   .respuesta .icono { position: absolute; top: 6px; right: 6px; }
+  .respuesta .plan { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 4px; }
+  .respuesta .paso { display: flex; gap: 9px; align-items: flex-start; padding: 6px 8px; border-radius: 7px; background: #262b30; cursor: pointer; }
+  .respuesta .paso:hover { background: #2c3238; }
+  .respuesta .paso input { margin-top: 3px; accent-color: #ef7fb0; }
+  .respuesta .plan-botones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .caja-pregunta { display: flex; align-items: center; gap: 10px; background: var(--campo); border: 1px solid var(--borde); border-radius: 22px; padding: 4px 6px 4px 16px; }
   .caja-pregunta:focus-within { border-color: #3f5f7c; }
   .caja-pregunta input { flex: 1; background: none; border: 0; outline: 0; padding: 6px 0; }
@@ -1086,6 +1091,44 @@ async function agregar() {
   document.getElementById("nuevoTexto")?.focus();
 }
 
+function cajaRespuesta(q, cuerpo) {
+  respuesta.innerHTML = `<div class="respuesta"><button class="icono" id="cerrarResp" title="Cerrar">${I.cerrar}</button>
+    ${q ? `<div class="q">${esc(q)}</div>` : ""}${cuerpo}</div>`;
+  document.getElementById("cerrarResp").onclick = () => respuesta.innerHTML = "";
+}
+function mostrarHecho(q, r) {
+  cajaRespuesta(q, `<div class="a">${esc(r.mensaje)}</div>
+    ${r.cambios ? `<div class="plan-botones"><button class="boton" id="btnDeshacer">↶ Deshacer</button></div>` : ""}`);
+  const d = document.getElementById("btnDeshacer");
+  if (d) d.onclick = async () => {
+    d.disabled = true;
+    const x = await api("deshacer");
+    await recargar();
+    cajaRespuesta(q, `<div class="a">${esc(x.mensaje)}</div>`);
+  };
+}
+function mostrarPlan(q, r) {
+  cajaRespuesta(q, `<div class="a">${esc(r.mensaje)}</div>
+    <div class="plan">${r.plan.map((p, i) => `<label class="paso"><input type="checkbox" checked data-i="${i}"><span>${esc(p)}</span></label>`).join("")}</div>
+    <div class="plan-botones"><button class="boton" id="btnCancelarPlan">Cancelar</button>
+    <button class="boton primario" id="btnHacerPlan">Hacerlo</button></div>`);
+  document.getElementById("btnCancelarPlan").onclick = async () => {
+    await api("aplicar_plan", []);
+    cajaRespuesta(q, `<div class="a">No hice ningún cambio.</div>`);
+  };
+  document.getElementById("btnHacerPlan").onclick = async () => {
+    const elegidos = [...respuesta.querySelectorAll(".paso input:checked")].map(x => +x.dataset.i);
+    document.getElementById("btnHacerPlan").disabled = true;
+    gatoFijar("pensar");
+    try {
+      const x = await api("aplicar_plan", elegidos);
+      if (x.cambios) await recargar();
+      mostrarHecho(q, x);
+      if (x.cambios) gatoFestejar();
+    } finally { gatoFijar(null); }
+  };
+}
+
 formPregunta.onsubmit = async e => {
   e.preventDefault();
   const q = pregunta.value.trim(); if (!q || ocupado) return;
@@ -1093,9 +1136,9 @@ formPregunta.onsubmit = async e => {
   respuesta.innerHTML = `<div class="respuesta"><div class="q">${esc(q)}</div><div class="a"><span class="cargando"></span>&nbsp; Pensando…</div></div>`;
   try {
     const r = await api("preguntar", q);
-    respuesta.innerHTML = `<div class="respuesta"><button class="icono" id="cerrarResp" title="Cerrar">${I.cerrar}</button>
-      <div class="q">${esc(r.pregunta || q)}</div><div class="a">${esc(r.mensaje)}</div></div>`;
-    document.getElementById("cerrarResp").onclick = () => respuesta.innerHTML = "";
+    const qq = r.pregunta || q;
+    if (r.plan && r.plan.length) mostrarPlan(qq, r);
+    else mostrarHecho(qq, r);
     pregunta.value = "";
     if (r.cambios) await recargar();
     if (r.ir) irA(r.ir);

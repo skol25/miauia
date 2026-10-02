@@ -305,10 +305,10 @@ def _conversacion():
     return []
 
 
-def _recordar(pregunta, respuesta):
+def _recordar(pregunta, respuesta, proyecto=""):
     turnos = (_conversacion() + [{"p": pregunta, "r": respuesta}])[-3:]
     with open(CONVERSACION, "w", encoding="utf-8") as f:
-        json.dump({"t": time.time(), "turnos": turnos}, f, ensure_ascii=False)
+        json.dump({"t": time.time(), "turnos": turnos, "proyecto": proyecto}, f, ensure_ascii=False)
 
 
 VISTAS_APP = ["hoy", "pendientes", "proximas", "calendario", "proyecto", "hechas", "todas", "reuniones",
@@ -359,11 +359,12 @@ Acciones (usa solo los campos que hagan falta; los demás van vacíos):
 - abrir: mostrar una pantalla de la app. vista (hoy, pendientes, proximas, calendario, hechas, todas, reuniones, cita, recordatorio, compra, idea, dato, michi, avisos) o vista "proyecto" + proyecto.
 'numeros' son los números entre corchetes de las listas: pendientes [1], [2]…; hechas [101]…; otras notas [201]…
 Puedes hacer varias acciones a la vez (ej.: crear un proyecto y mover tareas a él).
+Si enumera VARIAS tareas o cosas (con "también", "y", comas o una lista), crea UNA acción agregar POR CADA una, con su propio texto corto.
+Si pide "tareas", usa agregar con clase tarea (no apunte). Si dice "ahí" o "en ese proyecto", usa el PROYECTO DEL QUE SE HABLA.
 Si solo es una pregunta, 'acciones' va vacía. Si no está claro a qué notas se refiere, no actúes y pregunta.
 Nunca inventes números. No puedes leer la pestaña Credenciales (sí los apuntes y las notas): si te piden algo guardado allí, di que está en esa pestaña.
-IMPORTANTE: nada cambia si no pones la acción en 'acciones'. Nunca digas que hiciste algo que no pusiste ahí.
-Si te piden algo que no puedes hacer con estas acciones, dilo con sinceridad.
-En 'respuesta' cuenta en una o dos frases lo que hiciste, o responde la pregunta. En 'respuesta' no escribas los números [N]: nombra las notas por lo que dicen.
+IMPORTANTE: nada cambia si no pones la acción en 'acciones'.
+En 'respuesta': si es una pregunta, respóndela (sin escribir los números [N]). Si son cambios, pon solo "Ok".
 
 Ejemplos:
 "anota que mañana a las 3 tengo dentista" → agregar, clase cita, texto "Dentista", fecha de mañana, hora 15:00.
@@ -372,7 +373,8 @@ Ejemplos:
 "quítale la fecha a lo del banco" → quitar_fecha, numeros [el del banco].
 "ábreme el calendario" → abrir, vista "calendario".
 "guarda en los apuntes de TIODOL que el logo va en azul" → apunte, proyecto "TIODOL", texto "El logo va en azul".
-"guarda en las notas de Motocard admin@x.com clave Abc123" → apunte, proyecto "Motocard", texto "admin@x.com clave Abc123"."""
+"guarda en las notas de Motocard admin@x.com clave Abc123" → apunte, proyecto "Motocard", texto "admin@x.com clave Abc123".
+"agrega a Tiodol: cambiar el botón de refrescar por una línea y también mover el monto debajo del débito" → DOS acciones agregar, clase tarea, proyecto "Tiodol": "Cambiar el botón de refrescar por una línea" y "Mover el monto debajo del débito"."""
 
 
 def _numerar(nota, prefijo):
@@ -433,16 +435,249 @@ def tapar(texto, secretos):
 
 def _dice_que_hizo(texto):
     """¿La respuesta afirma en primera persona que cambió algo? (sin ser una pregunta)"""
-    import re
     if "?" in texto:
         return False
     t = comun.normalizar(texto)
-    return bool(re.search(r"\b(he|ya) (eliminado|borrado|quitado|marcado|movido|cambiado|actualizado|reprogramado|"
-                          r"agregado|anotado|creado|guardado|puesto|abierto)\b|\b(elimine|borre|quite|marque|movi|cambie|"
-                          r"actualice|reprograme|agregue|anote|guarde|puse)\b|^listo\b", t))
+    return bool(_re.search(r"\b(he|ya|fue|fueron|ha sido|han sido|quedo|quedaron) ?(eliminad|borrad|quitad|marcad|movid|cambiad|"
+                           r"actualizad|reprogramad|agregad|anotad|cread|guardad|puest|abiert|añadid|anadid)|\b(elimine|borre|"
+                           r"quite|marque|movi|cambie|actualice|reprograme|agregue|anote|guarde|puse|cree|anadi)\b|^listo\b", t))
 
 
-def modo_pregunta(pregunta):
+ORDEN = _re.compile(r"\b(agrega|agregale|agregar|anade|añade|anota|apunta|crea|crear|creame|pon|ponle|ponla|ponlas|coloca|"
+                    r"mete|mueve|muevela|pasa|pasala|pasalas|cambia|cambiale|modifica|edita|borra|borrala|elimina|quita|"
+                    r"quitale|quitala|quitalas|marca|marcala|reprograma|guarda|guardalo|abre|abreme|muestrame|registra|"
+                    r"programa|recuerdame|completa|termina)\b", _re.I)
+
+
+def _parece_orden(texto):
+    return bool(ORDEN.search(comun.normalizar(texto)))
+
+
+def _proyecto_mencionado(texto, ultimo=""):
+    """El proyecto que nombra el mensaje (o el de la charla si dice 'ahí' / 'ese proyecto')."""
+    t = " " + comun.normalizar(texto) + " "
+    mejor = ""
+    for p in comun.listar_proyectos():
+        n = comun.normalizar(p["nombre"])
+        if n and (f" {n} " in t or f" {n.replace(' ', '')} " in t) and len(n) > len(mejor):
+            mejor = p["nombre"]
+    if mejor:
+        return mejor
+    if ultimo and _re.search(r"\b(ahi|alli|ese proyecto|este proyecto|el mismo proyecto|ahi mismo)\b", t):
+        return ultimo
+    return ""
+
+
+def _ultimo_proyecto():
+    try:
+        with open(CONVERSACION, "r", encoding="utf-8") as f:
+            datos = json.load(f)
+        if time.time() - datos.get("t", 0) < 30 * 60:
+            return datos.get("proyecto", "")
+    except Exception:
+        pass
+    return ""
+
+
+def _cuando_txt(fecha, hora):
+    f, h = comun.limpiar_fecha(fecha), comun.limpiar_hora(hora)
+    if not f and not h:
+        return ""
+    return _cuando({"fecha": f, "hora": h}) if f else f"a las {h}"
+
+
+def _planear(datos, buscar, pregunta, ultimo):
+    """Convierte lo que pidió la IA en una lista de pasos claros, revisados por el programa."""
+    plan, ir = [], None
+    proy_msg = _proyecto_mencionado(pregunta, ultimo)
+    pide_tareas = bool(_re.search(r"\btareas?\b", comun.normalizar(pregunta))) and "apunte" not in comun.normalizar(pregunta)
+    for acc in datos.get("acciones") or []:
+        tipo = acc.get("tipo")
+        texto = (acc.get("texto") or "").strip()
+        proyecto = (acc.get("proyecto") or "").strip()
+        if tipo in ("agregar", "apunte") and proy_msg:
+            proyecto = proy_msg  # el proyecto que TÚ nombraste manda sobre el que adivina la IA
+        if tipo == "apunte" and pide_tareas:
+            tipo, acc = "agregar", dict(acc, clase="tarea")
+        existente = comun.buscar_proyecto(proyecto) if proyecto else None
+        nombre_p = existente["nombre"] if existente else proyecto
+        en = f" en {nombre_p}" if nombre_p else ""
+        nuevo = " (proyecto nuevo)" if proyecto and not existente else ""
+        if tipo == "agregar" and texto:
+            clase = acc.get("clase") or "tarea"
+            cuando = _cuando_txt(acc.get("fecha"), acc.get("hora"))
+            plan.append({"tipo": tipo, "clase": clase, "texto": texto, "fecha": acc.get("fecha", ""),
+                         "hora": acc.get("hora", ""), "proyecto": nombre_p,
+                         "desc": f"Anotar {comun.NOMBRE_TIPO.get(clase, 'Dato').lower()} «{texto}»{en}{nuevo}"
+                                 + (f" — {cuando}" if cuando else "")})
+        elif tipo == "crear_proyecto" and proyecto:
+            if existente:
+                continue
+            plan.append({"tipo": tipo, "proyecto": proyecto, "texto": texto, "desc": f"Crear el proyecto {proyecto}"})
+        elif tipo == "apunte" and texto and (proyecto or proy_msg):
+            plan.append({"tipo": tipo, "proyecto": nombre_p, "texto": texto,
+                         "desc": f"Escribir en los apuntes de {nombre_p}{nuevo}: «{texto}»"})
+        elif tipo == "credencial" and (acc.get("clave") or acc.get("usuario")):
+            plan.append({"tipo": tipo, "proyecto": nombre_p or "Personal", "nombre": texto or "Acceso",
+                         "usuario": acc.get("usuario", ""), "clave": acc.get("clave", ""), "url": acc.get("url", ""),
+                         "desc": f"Guardar el acceso «{texto or 'Acceso'}» en Credenciales de {nombre_p or 'Personal'}"})
+        elif tipo == "abrir":
+            v = acc.get("vista") or ""
+            if v == "proyecto" or (not v and proyecto):
+                p = comun.buscar_proyecto(proyecto or proy_msg)
+                ir = f"p:{p['nombre']}" if p else ir
+            elif v in VISTAS_APP:
+                ir = v
+        elif tipo in ("completar", "reabrir", "reprogramar", "quitar_fecha", "editar", "mover", "borrar", "a_boveda"):
+            if tipo == "mover":
+                quitar = comun.normalizar(proyecto) in ("ninguno", "sin proyecto")
+                proyecto = "" if quitar else (proyecto or proy_msg)
+                if not proyecto and not quitar:
+                    continue
+                existente = comun.buscar_proyecto(proyecto) if proyecto else None
+                nombre_p = existente["nombre"] if existente else proyecto
+            for num in dict.fromkeys(acc.get("numeros") or []):
+                nota = buscar(num)
+                if not nota:
+                    continue
+                t = nota["texto"]
+                if tipo == "completar" and (not nota["casilla"] or nota["hecho"]):
+                    continue
+                if tipo == "reabrir" and not nota["hecho"]:
+                    continue
+                if tipo == "quitar_fecha" and not (nota["fecha"] or nota["hora"]):
+                    continue
+                if tipo == "reprogramar" and not (comun.limpiar_fecha(acc.get("fecha")) or comun.limpiar_hora(acc.get("hora"))):
+                    continue
+                if tipo == "editar" and not texto and acc.get("clase") in ("", None, nota["tipo"]):
+                    continue
+                if tipo == "mover" and nota["proyecto"] == nombre_p:
+                    continue
+                desc = {
+                    "completar": f"Marcar como hecha «{t}»",
+                    "reabrir": f"Volver a poner pendiente «{t}»",
+                    "reprogramar": f"Cambiar la fecha de «{t}» → {_cuando_txt(acc.get('fecha') or nota['fecha'], acc.get('hora') or nota['hora'])}",
+                    "quitar_fecha": f"Quitarle la fecha a «{t}»",
+                    "editar": f"Cambiar «{t}» por «{texto or t}»",
+                    "mover": f"Mover «{t}» → " + (f"{nombre_p}{' (proyecto nuevo)' if proyecto and not existente else ''}" if nombre_p else "sin proyecto"),
+                    "borrar": f"Borrar «{t}»",
+                    "a_boveda": f"Pasar «{t[:40]}…» a Credenciales",
+                }[tipo]
+                plan.append({"tipo": tipo, "linea": nota["linea"], "texto": texto, "clase": acc.get("clase") or "",
+                             "fecha": acc.get("fecha", ""), "hora": acc.get("hora", ""), "proyecto": nombre_p,
+                             "nombre": texto or "Acceso", "desc": desc})
+                if tipo == "editar":
+                    break
+    return plan, ir
+
+
+# ---------------------------------------------------------------- aplicar (y deshacer)
+
+PLAN = os.path.join(comun.TEMPORAL, "plan_pendiente.json")
+DESHACER = os.path.join(comun.TEMPORAL, "deshacer.json")
+
+
+def _leer_archivo(ruta):
+    try:
+        with open(ruta, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _foto(plan):
+    """Guarda cómo estaba todo antes de cambiarlo, para poder deshacer."""
+    rutas = [comun.NOTAS, comun.PROYECTOS, os.path.join(comun.DATOS, "boveda.json")]
+    rutas += [comun.ruta_apuntes(p["proyecto"]) for p in plan if p["tipo"] == "apunte"]
+    with open(DESHACER, "w", encoding="utf-8") as f:
+        json.dump({"t": time.time(), "archivos": {r: _leer_archivo(r) for r in rutas}}, f, ensure_ascii=False)
+
+
+def deshacer():
+    try:
+        with open(DESHACER, "r", encoding="utf-8") as f:
+            foto = json.load(f)
+    except Exception:
+        return {"ok": False, "mensaje": "No hay nada que deshacer."}
+    for ruta, contenido in foto["archivos"].items():
+        if contenido is None:
+            if os.path.exists(ruta):
+                os.remove(ruta)
+        else:
+            os.makedirs(os.path.dirname(ruta), exist_ok=True)
+            with open(ruta, "w", encoding="utf-8") as f:
+                f.write(contenido)
+    os.remove(DESHACER)
+    return {"ok": True, "mensaje": "Listo, dejé todo como estaba antes.", "cambios": 1}
+
+
+def aplicar_plan(plan):
+    _foto(plan)
+    hechos, fallos, cambiadas = [], [], {}
+    for paso in plan:
+        tipo = paso["tipo"]
+        try:
+            if tipo == "agregar":
+                comun.agregar_nota(paso["clase"], paso["texto"], paso["fecha"], paso["hora"], proyecto=paso["proyecto"])
+                ok = True
+            elif tipo == "crear_proyecto":
+                comun.asegurar_proyecto(paso["proyecto"], paso.get("texto", ""))
+                ok = True
+            elif tipo == "apunte":
+                nombre = comun.asegurar_proyecto(paso["proyecto"])
+                previo = comun.leer_apuntes(nombre).rstrip()
+                comun.guardar_apuntes(nombre, (previo + "\n" if previo else "") + f"- {paso['texto']}\n")
+                ok = True
+            elif tipo == "credencial":
+                guardar_credencial(_proyecto_boveda(paso["proyecto"]), paso["nombre"], paso["usuario"], paso["clave"],
+                                   paso["url"], "")
+                ok = True
+            else:
+                linea = cambiadas.get(paso["linea"], paso["linea"])
+                nota = next((n for n in comun.listar_notas() if n["linea"] == linea), None)
+                if not nota:
+                    ok = False
+                elif tipo == "a_boveda":
+                    guardar_credencial(_proyecto_boveda(nota["proyecto"]), paso["nombre"], "", "", "", nota["texto"])
+                    ok = comun.reemplazar_linea(nota["linea"], None)
+                else:
+                    destino = comun.asegurar_proyecto(paso["proyecto"]) if tipo == "mover" and paso["proyecto"] else ""
+                    ok = _aplicar_a(nota, tipo, fecha=paso["fecha"], hora=paso["hora"], texto=paso["texto"],
+                                    clase=paso["clase"], proyecto=destino)
+                    if ok:
+                        cambiadas[paso["linea"]] = nota["linea"]
+        except Exception:
+            log.exception("No pude hacer el paso %s", paso.get("desc"))
+            ok = False
+        (hechos if ok else fallos).append(paso["desc"])
+    lineas = [f"✓ {h}" for h in hechos] + [f"✗ No pude: {f}" for f in fallos]
+    return {"ok": True, "mensaje": "\n".join(lineas), "cambios": len(hechos), "hechos": hechos, "fallos": fallos}
+
+
+def aplicar_plan_guardado(indices):
+    try:
+        with open(PLAN, "r", encoding="utf-8") as f:
+            plan = json.load(f)["plan"]
+        os.remove(PLAN)
+    except Exception:
+        return {"ok": False, "mensaje": "Ese cambio ya no está disponible. Pídemelo de nuevo."}
+    elegidos = [p for i, p in enumerate(plan) if i in set(indices)]
+    if not elegidos:
+        return {"ok": True, "mensaje": "No hice ningún cambio.", "cambios": 0}
+    return aplicar_plan(elegidos)
+
+
+# ---------------------------------------------------------------- preguntar / pedir
+
+def _pensar(modelo, sistema, usuario):
+    try:
+        return leer_json(conversar(modelo, sistema, usuario, formato=ESQUEMA_PREGUNTA, contexto=12288))
+    except Exception:
+        log.exception("La respuesta de %s no vino en el formato esperado", modelo)
+        return None
+
+
+def modo_pregunta(pregunta, confirmar=False):
     asegurar_ollama()
     pend = _pendientes()
     todas = comun.listar_notas()
@@ -450,6 +685,8 @@ def modo_pregunta(pregunta):
     otras = [n for n in todas if not n["casilla"]][-60:]
     extra = comun.contexto_para_pregunta(pregunta, limite=8000, solo_extra=True)
     charla = "\n".join(f"Pregunta: {t['p']}\nRespuesta: {t['r']}" for t in _conversacion())
+    ultimo = _ultimo_proyecto()
+    proy_msg = _proyecto_mencionado(pregunta, ultimo)
     sistema = (
         f"Eres Miauia, el asistente personal de {QUIEN}. Respondes en español, breve y directo, usando SOLO "
         "la información que te doy. La lista TAREAS PENDIENTES es la verdad: si tiene elementos, hay "
@@ -467,14 +704,9 @@ def modo_pregunta(pregunta):
         + ("\n".join(_numerar(n, 200 + i) for i, n in enumerate(otras, 1)) or "(ninguna)")
         + (f"\n\n=== REUNIONES Y APUNTES ===\n{extra}" if extra else "")
         + (f"\n\n=== CONVERSACIÓN RECIENTE ===\n{charla}" if charla else "")
+        + (f"\n\nPROYECTO DEL QUE SE HABLA: {proy_msg} (si el mensaje pide anotar algo, va en este proyecto)" if proy_msg else "")
         + f"\n\nMensaje: {pregunta}"
     )
-    try:
-        datos = leer_json(conversar(CFG["modelo_rapido"], sistema, usuario, formato=ESQUEMA_PREGUNTA, contexto=12288))
-    except Exception:
-        log.exception("La respuesta no vino en el formato esperado; pregunto sin acciones")
-        datos = {"respuesta": conversar(CFG["modelo_rapido"], sistema.split("Además de responder")[0], usuario),
-                 "acciones": []}
 
     def buscar(num):
         if 1 <= num <= len(pend):
@@ -485,95 +717,46 @@ def modo_pregunta(pregunta):
             return otras[num - 201]
         return None
 
-    hechos, fallos, ir, secretos = [], [], None, []
-    for acc in datos.get("acciones") or []:
-        tipo = acc.get("tipo")
-        texto = (acc.get("texto") or "").strip()
-        proyecto = (acc.get("proyecto") or "").strip()
-        try:
-            if tipo == "credencial" and (acc.get("clave") or acc.get("nota")):
-                nombre_p = _proyecto_boveda(proyecto)
-                secretos += [acc.get("clave") or "", acc.get("nota") or ""]
-                if texto and parece_secreto(texto):
-                    secretos.append(texto)
-                    texto = ""
-                guardar_credencial(nombre_p, texto or "Acceso", acc.get("usuario", ""), acc.get("clave", ""),
-                                   acc.get("url", ""), acc.get("nota", ""))
-                hechos.append(f"🔒 Guardé el acceso «{texto or 'Acceso'}» cifrado en Credenciales de {nombre_p}")
-            elif tipo == "a_boveda":
-                for num in dict.fromkeys(acc.get("numeros") or []):
-                    nota = buscar(num)
-                    if not nota:
-                        continue
-                    nombre_p = _proyecto_boveda(nota["proyecto"])
-                    secretos.append(nota["texto"])
-                    guardar_credencial(nombre_p, texto or "Acceso", "", "", "", nota["texto"])
-                    comun.reemplazar_linea(nota["linea"], None)
-                    hechos.append(f"🔒 Pasé una nota a Credenciales de {nombre_p} (cifrada) y la quité de las notas")
-            elif tipo == "agregar" and texto:
-                clase = acc.get("clase") or "tarea"
-                comun.agregar_nota(clase, texto, acc.get("fecha", ""), acc.get("hora", ""), proyecto=proyecto)
-                cuando = " ".join(x for x in (comun.limpiar_fecha(acc.get("fecha")), comun.limpiar_hora(acc.get("hora"))) if x)
-                hechos.append(f"Anoté {comun.NOMBRE_TIPO.get(clase, 'Dato').lower()}: {texto}"
-                              + (f" ({cuando})" if cuando else "") + (f" · {comun.asegurar_proyecto(proyecto)}" if proyecto else ""))
-            elif tipo == "crear_proyecto" and proyecto:
-                existia = comun.buscar_proyecto(proyecto)
-                nombre = comun.asegurar_proyecto(proyecto, texto)
-                hechos.append(f"El proyecto {nombre} ya existía" if existia else f"Creé el proyecto {nombre}")
-            elif tipo == "apunte" and proyecto and texto:
-                nombre = comun.asegurar_proyecto(proyecto)
-                previo = comun.leer_apuntes(nombre).rstrip()
-                comun.guardar_apuntes(nombre, (previo + "\n" if previo else "") + f"- {texto}\n")
-                hechos.append(f"Lo guardé en los apuntes de {nombre}: {texto}")
-            elif tipo == "abrir":
-                v = acc.get("vista") or ""
-                if v == "proyecto" or (not v and proyecto):
-                    p = comun.buscar_proyecto(proyecto)
-                    ir = f"p:{p['nombre']}" if p else None
-                elif v in VISTAS_APP:
-                    ir = v
-            elif tipo in ("completar", "reabrir", "reprogramar", "quitar_fecha", "editar", "mover", "borrar"):
-                destino = ""
-                if tipo == "mover":
-                    destino = "" if comun.normalizar(proyecto) in ("", "ninguno", "sin proyecto") else comun.asegurar_proyecto(proyecto)
-                for num in dict.fromkeys(acc.get("numeros") or []):
-                    nota = buscar(num)
-                    if not nota:
-                        continue
-                    antes = nota["texto"]
-                    if _aplicar_a(nota, tipo, fecha=acc.get("fecha", ""), hora=acc.get("hora", ""),
-                                  texto=texto, clase=acc.get("clase"), proyecto=destino):
-                        hechos.append({
-                            "completar": f"Marqué como hecha: {antes}",
-                            "reabrir": f"Volví a pendientes: {antes}",
-                            "reprogramar": f"Nueva fecha para {antes}: {_cuando(nota)}",
-                            "quitar_fecha": f"Le quité la fecha a: {antes}",
-                            "editar": f"Cambié «{antes}» por «{nota['texto']}»",
-                            "mover": f"Moví {antes} → " + (destino or "sin proyecto"),
-                            "borrar": f"Borré: {antes}",
-                        }[tipo])
-                    else:
-                        fallos.append(f"{tipo.replace('_', ' ')} «{antes}»")
-                    if tipo == "editar":
-                        break  # editar es de una sola nota
-        except Exception:
-            log.exception("No pude hacer la acción %s", acc)
+    orden = _parece_orden(pregunta)
+    modelos = [CFG["modelo_rapido"]]
+    if orden and CFG.get("modelo_reunion") and CFG["modelo_reunion"] != CFG["modelo_rapido"]:
+        modelos.append(CFG["modelo_reunion"])  # si la rápida no entiende la orden, prueba la grande
+    datos, plan, ir = None, [], None
+    for modelo in modelos:
+        intento = _pensar(modelo, sistema, usuario)
+        if intento is None:
+            continue
+        datos = intento
+        plan, ir = _planear(datos, buscar, pregunta, ultimo)
+        log.info("IA %s · acciones: %s · plan: %s", modelo,
+                 json.dumps(datos.get("acciones"), ensure_ascii=False)[:1500], [p["desc"] for p in plan])
+        if plan or ir or not orden:
+            break
+    if datos is None:
+        datos = {"respuesta": conversar(CFG["modelo_rapido"], sistema.split("Además de responder")[0], usuario)}
 
-    respuesta = tapar(datos.get("respuesta") or "", secretos).strip()
-    log.info("Acciones pedidas por la IA: %s", tapar(json.dumps(datos.get("acciones"), ensure_ascii=False), secretos))
-    if not hechos and not ir and _dice_que_hizo(respuesta):
-        # la IA "dice" que cambió algo pero no pidió ninguna acción válida: no le creemos
-        respuesta = ("No pude hacer ese cambio: no entendí bien qué nota era o qué hacer con ella. "
-                     "Prueba diciéndolo de otra forma, por ejemplo: «quítale la fecha a la tarea de Tiodol».")
-    if fallos:
-        respuesta += "\n\n" + "\n".join(f"✗ No pude: {f}" for f in fallos)
-    if hechos:
-        resumen = "\n".join(f"✓ {h}" for h in hechos)
-        respuesta = f"{respuesta}\n\n{resumen}" if respuesta else resumen
-    respuesta = tapar(respuesta, secretos)
-    _recordar(tapar(pregunta, secretos), respuesta)
-    return {"ok": True, "titulo": "Respuesta", "pregunta": tapar(pregunta, secretos), "mensaje": respuesta,
-            "cambios": len(hechos), "ir": ir}
+    respuesta = (datos.get("respuesta") or "").strip()
+    resultado = {"ok": True, "titulo": "Respuesta", "pregunta": pregunta, "ir": ir, "cambios": 0}
+    if plan:
+        # el texto lo escribe el programa: así nunca dice que hizo algo distinto de lo que hace
+        if confirmar:
+            with open(PLAN, "w", encoding="utf-8") as f:
+                json.dump({"t": time.time(), "plan": plan}, f, ensure_ascii=False)
+            resultado.update(mensaje="Esto es lo que voy a hacer:", plan=[p["desc"] for p in plan])
+            resumen = "Propuse: " + "; ".join(p["desc"] for p in plan)
+        else:
+            hecho = aplicar_plan(plan)
+            resultado.update(mensaje=hecho["mensaje"], cambios=hecho["cambios"], deshacer=True)
+            resumen = hecho["mensaje"]
+    elif orden or _dice_que_hizo(respuesta):
+        resultado["mensaje"] = ("No hice ningún cambio: no entendí bien qué querías que hiciera. "
+                                "Prueba más directo, por ejemplo: «agrega en Tiodol la tarea revisar el botón de refrescar».")
+        resumen = resultado["mensaje"]
+    else:
+        resultado["mensaje"] = respuesta or "No sé qué responder a eso."
+        resumen = resultado["mensaje"]
+    _recordar(pregunta, resumen, proy_msg or next((p["proyecto"] for p in plan if p.get("proyecto")), "") or ultimo)
+    return resultado
 
 
 ESQUEMA_REUNION = {
@@ -720,10 +903,22 @@ def main():
     p.add_argument("--proyecto", default="")
     p.add_argument("--salida")
     p.add_argument("--preparar", action="store_true")
+    p.add_argument("--confirmar", action="store_true")
+    p.add_argument("--aplicar-plan")
+    p.add_argument("--deshacer", action="store_true")
     a = p.parse_args()
 
     if a.preparar:
         preparar()
+        return
+    if a.aplicar_plan is not None or a.deshacer:
+        r = deshacer() if a.deshacer else aplicar_plan_guardado(json.loads(a.aplicar_plan or "[]"))
+        texto = json.dumps(r, ensure_ascii=False)
+        if a.salida:
+            with open(a.salida, "w", encoding="utf-8") as f:
+                f.write(texto)
+        else:
+            print(texto)
         return
 
     audios = [x for x in (a.audio, a.audio_sistema) if x]
@@ -741,7 +936,7 @@ def main():
             elif a.modo == "nota":
                 resultado = modo_nota(texto, a.proyecto)
             else:
-                resultado = modo_pregunta(texto)
+                resultado = modo_pregunta(texto, confirmar=a.confirmar)
         borrar = resultado.get("ok") and not (a.modo == "reunion" and CFG["guardar_audio_reuniones"])
     except Exception as e:
         log.error("Falló el modo %s: %s", a.modo, traceback.format_exc())

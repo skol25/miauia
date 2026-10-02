@@ -36,6 +36,7 @@ CONFIG_POR_DEFECTO = {
     "max_segundos_nota": 90,
     "grabar_audio_sistema_en_reunion": True,
     "leer_respuestas_en_voz": False,
+    "confirmar_cambios": True,
     "guardar_audio_reuniones": False,
     "avisar_minutos_antes": 10,
     "resumen_diario": "08:00",

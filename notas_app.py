@@ -23,12 +23,14 @@ def _python_consola():
     return python if os.path.exists(python) else sys.executable
 
 
-def _trabajador(modo, texto, proyecto=""):
+def _trabajador(modo, texto, proyecto="", extra=None):
     salida = os.path.join(comun.TEMPORAL, f"resultado_app_{time.time_ns()}.json")
-    orden = [_python_consola(), os.path.join(comun.BASE, "trabajador.py"),
-             "--modo", modo, "--texto", texto, "--salida", salida]
+    orden = [_python_consola(), os.path.join(comun.BASE, "trabajador.py"), "--salida", salida]
+    if modo:
+        orden += ["--modo", modo, "--texto", texto]
     if proyecto:
         orden += ["--proyecto", proyecto]
+    orden += extra or []
     subprocess.run(orden, cwd=comun.BASE, creationflags=SIN_VENTANA if os.name == "nt" else 0,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not os.path.exists(salida):
@@ -250,7 +252,14 @@ class Api:
         return _trabajador("nota", texto, proyecto)
 
     def preguntar(self, texto):
-        return _trabajador("pregunta", texto)
+        confirmar = comun.cargar_config().get("confirmar_cambios", True)
+        return _trabajador("pregunta", texto, extra=["--confirmar"] if confirmar else [])
+
+    def aplicar_plan(self, indices):
+        return _trabajador("", "", extra=["--aplicar-plan", json.dumps([int(i) for i in indices])])
+
+    def deshacer(self):
+        return _trabajador("", "", extra=["--deshacer"])
 
     def abrir(self, que):
         if que == "notas":
